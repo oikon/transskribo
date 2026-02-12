@@ -122,3 +122,18 @@ Notes:
   - All 151 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-12 — Session 7: Polish & Hardening
+Features: 11.01, 11.02, 11.03, 11.04
+Status: success
+Notes:
+  - Added --retry-failed flag to run command: loads failed entries from registry, re-includes files with status "failed" in the processing loop even if output exists
+  - Added --dry-run flag to run command: scans, validates, and logs what would be processed without running transcription or writing outputs
+  - Implemented graceful SIGINT/SIGTERM handling: signal handler sets _shutdown_requested flag, pipeline loop checks before each file, finishes current file, saves registry, logs partial batch summary
+  - Signal handlers are installed in _run_pipeline and restored in a finally block
+  - Refactored _run_pipeline into _run_pipeline (signal setup/teardown) and _run_pipeline_inner (logic) for clean separation
+  - Added _get_failed_hashes() helper to extract failed source paths from registry
+  - Wrote 14 new tests: retry-failed reprocessing, retry with no failures, skip without retry flag, dry-run no processing, dry-run logs summary, dry-run still validates, SIGINT stops after current file, signal flag test, shutdown saves registry, full pipeline end-to-end, error+retry flow, dry-run→real-run sequence, _get_failed_hashes unit tests
+  - All 165 tests pass, ruff clean, pyright clean
+Issues:
+  - none
