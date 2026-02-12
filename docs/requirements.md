@@ -45,10 +45,10 @@ Status key: `[ ]` = not started, `[x]` = done
 
 ## 6. Hashing & Registry
 
-- [ ] 6.01 — Implement `compute_hash(file_path: Path) -> str` in `hasher.py` that streams SHA-256, returns hex digest. Define `RegistryEntry` dataclass with fields: source_path, output_path, timestamp, status, duration_audio_secs (float | None), timing ({transcribe_secs, align_secs, diarize_secs, total_secs} | None), error (str | None)
-- [ ] 6.02 — Implement `load_registry(registry_path: Path) -> dict` and `save_registry(registry: dict, registry_path: Path)` with atomic write (temp file + rename)
-- [ ] 6.03 — Implement `lookup_hash(registry: dict, file_hash: str) -> dict | None` that returns the existing entry if hash was seen with status "success", and `register_hash(registry: dict, file_hash: str, ...)` that adds/updates an entry with all fields (source_path, output_path, status, duration_audio_secs, timing, error)
-- [ ] 6.04 — Write tests: hash determinism, registry CRUD, atomic write safety, lookup hit/miss, register with timing data
+- [x] 6.01 — Implement `compute_hash(file_path: Path) -> str` in `hasher.py` that streams SHA-256, returns hex digest. Define `RegistryEntry` dataclass with fields: source_path, output_path, timestamp, status, duration_audio_secs (float | None), timing ({transcribe_secs, align_secs, diarize_secs, total_secs} | None), error (str | None)
+- [x] 6.02 — Implement `load_registry(registry_path: Path) -> dict` and `save_registry(registry: dict, registry_path: Path)` with atomic write (temp file + rename)
+- [x] 6.03 — Implement `lookup_hash(registry: dict, file_hash: str) -> dict | None` that returns the existing entry if hash was seen with status "success", and `register_hash(registry: dict, file_hash: str, ...)` that adds/updates an entry with all fields (source_path, output_path, status, duration_audio_secs, timing, error)
+- [x] 6.04 — Write tests: hash determinism, registry CRUD, atomic write safety, lookup hit/miss, register with timing data
 
 **Done when:** Files can be hashed, registry persists to disk atomically, lookups work. Tests pass.
 
