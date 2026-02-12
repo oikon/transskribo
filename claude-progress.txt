@@ -82,3 +82,24 @@ Notes:
   - All 90 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-12 — Session 5: Output Writer & Reporter
+Features: 8.01, 8.02, 8.03, 9.01, 9.02, 9.03, 9.04, 9.05
+Status: success
+Notes:
+  - Implemented build_output_document() in output.py structuring JSON with segments, words, metadata
+  - Segments contain start, end, text, speaker, and nested words list
+  - Words are flattened into a top-level list with start, end, word, score, speaker
+  - Metadata includes source_file, file_hash, duration_secs, num_speakers, model_size, language, processed_at, timing
+  - num_speakers auto-counted from unique speakers in segments if not provided in metadata
+  - Implemented write_output() with atomic write (tempfile + rename) and parent dir creation
+  - Implemented copy_duplicate_output() that copies output JSON and updates source_file + processed_at in metadata
+  - Wrote 18 tests for output.py covering document structure, empty/missing segments, unicode, atomic write safety, duplicate copy
+  - Implemented compute_statistics() in reporter.py reusing scan_directory for total file count
+  - Implemented compute_timing_statistics() with per-stage avg/min/max, speed ratio (audio/processing), total count
+  - Implemented per_directory_breakdown() grouping stats by top-level subdirectory relative to input_dir
+  - Implemented format_report() rendering rich tables for progress, timing, and per-directory sections with ETA
+  - Wrote 27 tests for reporter.py covering statistics computation, timing stats, breakdown grouping, report formatting
+  - All 135 tests pass, ruff clean, pyright clean
+Issues:
+  - none
