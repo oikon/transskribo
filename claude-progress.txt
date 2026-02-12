@@ -137,3 +137,19 @@ Notes:
   - All 165 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-12 — Session 8: Batch Limit Controls
+Features: 12.01, 12.02, 12.03, 12.04
+Status: success
+Notes:
+  - Added --max-files CLI option to run command (int, default 0 = no limit)
+  - Added --max-processing-minutes CLI option to run command (float, default 0 = no limit)
+  - --max-files counts only successful transcriptions; duplicates, errors, invalid files do not count
+  - --max-processing-minutes checks wall-clock elapsed time before each file; current file always finishes
+  - Both limits passed through run → _run_pipeline → _run_pipeline_inner
+  - Limit checks sit alongside existing _shutdown_requested flag at top of file loop
+  - Batch summary shows "Partial Batch Summary (interrupted)" and stop reason when a limit is hit
+  - Wrote 15 new tests: max-files stops after N, max-files ignores duplicates, max-files ignores errors, max-files 0 = no limit, max-files logs stop reason, max-processing-minutes stops after elapsed time (time.monotonic mocked via state-based approach to handle Rich Progress internal calls), max-processing-minutes 0 = no limit, max-processing-minutes logs stop reason, dry-run ignores max-files, SIGINT takes priority over max-files
+  - All 180 tests pass, ruff clean, pyright clean
+Issues:
+  - none
