@@ -68,19 +68,19 @@ loading pyannote for diarization. This prevents OOM on 8GB VRAM.
 
 ## 8. Output Writer
 
-- [ ] 8.01 — Implement `build_output_document(result: dict, metadata: dict) -> dict` in `output.py` that structures the final JSON with three top-level keys: `segments` (list of segments with start, end, text, speaker, words), `words` (flat list of all words with start, end, score, speaker), and `metadata` (dict with fields: source_file, file_hash, duration_secs, num_speakers, model_size, language, processed_at, timing)
-- [ ] 8.02 — Implement `write_output(document: dict, output_path: Path)` that creates parent directories and writes JSON atomically, and `copy_duplicate_output(source_output: Path, target_output: Path)` that copies an existing output for a duplicate, updating metadata to reflect the new source path
-- [ ] 8.03 — Write tests: document structure validation, directory creation, atomic write, duplicate copy with metadata update
+- [x] 8.01 — Implement `build_output_document(result: dict, metadata: dict) -> dict` in `output.py` that structures the final JSON with three top-level keys: `segments` (list of segments with start, end, text, speaker, words), `words` (flat list of all words with start, end, score, speaker), and `metadata` (dict with fields: source_file, file_hash, duration_secs, num_speakers, model_size, language, processed_at, timing)
+- [x] 8.02 — Implement `write_output(document: dict, output_path: Path)` that creates parent directories and writes JSON atomically, and `copy_duplicate_output(source_output: Path, target_output: Path)` that copies an existing output for a duplicate, updating metadata to reflect the new source path
+- [x] 8.03 — Write tests: document structure validation, directory creation, atomic write, duplicate copy with metadata update
 
 **Done when:** Output JSON is written correctly with all fields, duplicates are handled. Tests pass.
 
 ## 9. Reporter
 
-- [ ] 9.01 — Implement `compute_statistics(registry: dict, input_dir: Path | None, output_dir: Path | None) -> dict` in `reporter.py` that calculates: total files in input (reuse `scan_directory` from `scanner.py` if input_dir provided), files processed (succeeded), failed, skipped, duplicates, remaining, total audio duration processed, total audio duration discovered
-- [ ] 9.02 — Implement `compute_timing_statistics(registry: dict) -> dict` that calculates from per-file timing data: average/min/max per stage (transcribe, align, diarize), average total time per file, processing speed ratio (audio duration / processing time), estimated time remaining (avg total x remaining files)
-- [ ] 9.03 — Implement `per_directory_breakdown(registry: dict, input_dir: Path | None) -> dict` that groups stats and timing by top-level subdirectory
-- [ ] 9.04 — Implement `format_report(stats: dict, timing_stats: dict, breakdown: dict) -> str` that renders a formatted report using rich tables: progress section, timing section, per-directory section
-- [ ] 9.05 — Write tests: stats calculation with various registry states, timing stats with/without timing data, breakdown grouping, report formatting
+- [x] 9.01 — Implement `compute_statistics(registry: dict, input_dir: Path | None, output_dir: Path | None) -> dict` in `reporter.py` that calculates: total files in input (reuse `scan_directory` from `scanner.py` if input_dir provided), files processed (succeeded), failed, skipped, duplicates, remaining, total audio duration processed, total audio duration discovered
+- [x] 9.02 — Implement `compute_timing_statistics(registry: dict) -> dict` that calculates from per-file timing data: average/min/max per stage (transcribe, align, diarize), average total time per file, processing speed ratio (audio duration / processing time), estimated time remaining (avg total x remaining files)
+- [x] 9.03 — Implement `per_directory_breakdown(registry: dict, input_dir: Path | None) -> dict` that groups stats and timing by top-level subdirectory
+- [x] 9.04 — Implement `format_report(stats: dict, timing_stats: dict, breakdown: dict) -> str` that renders a formatted report using rich tables: progress section, timing section, per-directory section
+- [x] 9.05 — Write tests: stats calculation with various registry states, timing stats with/without timing data, breakdown grouping, report formatting
 
 **Done when:** Statistics include full progress and per-stage timing. Report is readable with rich formatting. Works independently from processing. Tests pass.
 
