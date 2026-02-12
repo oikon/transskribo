@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from rich.console import Console
 from rich.table import Table
 
 from transskribo.scanner import scan_directory
+
+ENRICHMENT_KEYS = ("title", "keywords", "summary", "concepts")
 
 
 def compute_statistics(
@@ -60,6 +63,12 @@ def compute_statistics(
 
     remaining = max(0, total_files - processed - failed) if total_files > 0 else 0
 
+    # Count enrichment status by scanning result JSONs in output_dir
+    enriched = 0
+    not_enriched = 0
+    if output_dir is not None and output_dir.exists():
+        enriched, not_enriched = _count_enrichment(output_dir)
+
     return {
         "total_files": total_files,
         "processed": processed,
@@ -69,7 +78,41 @@ def compute_statistics(
         "remaining": remaining,
         "total_audio_duration_processed": total_audio_processed,
         "total_audio_duration_discovered": total_audio_discovered,
+        "enriched": enriched,
+        "not_enriched": not_enriched,
     }
+
+
+def _count_enrichment(output_dir: Path) -> tuple[int, int]:
+    """Count enriched vs not-enriched result JSONs in output_dir."""
+    enriched = 0
+    not_enriched = 0
+    transskribo_dir = output_dir / ".transskribo"
+
+    for json_path in output_dir.rglob("*.json"):
+        # Skip files inside .transskribo/
+        try:
+            json_path.relative_to(transskribo_dir)
+            continue
+        except ValueError:
+            pass
+
+        try:
+            with json_path.open("r", encoding="utf-8") as f:
+                doc = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        # Only count transskribo result files
+        if "segments" not in doc or "metadata" not in doc:
+            continue
+
+        if all(key in doc for key in ENRICHMENT_KEYS):
+            enriched += 1
+        else:
+            not_enriched += 1
+
+    return enriched, not_enriched
 
 
 def compute_timing_statistics(registry: dict[str, Any]) -> dict[str, Any]:
@@ -230,6 +273,13 @@ def format_report(
 
     total_audio = stats.get("total_audio_duration_processed", 0.0)
     progress_table.add_row("Audio processed", _format_duration(total_audio))
+
+    # Enrichment progress
+    enriched = stats.get("enriched", 0)
+    not_enriched = stats.get("not_enriched", 0)
+    enrich_total = enriched + not_enriched
+    if enrich_total > 0:
+        progress_table.add_row("Enriched", f"{enriched} / {enrich_total}")
 
     # ETA
     avg_total = timing_stats.get("avg_total_secs", 0.0)

@@ -25,6 +25,17 @@ class TransskriboConfig:
     max_duration_hours: float = 0
 
 
+@dataclass(frozen=True)
+class EnrichConfig:
+    """Immutable configuration for the enrich command."""
+
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: str = ""
+    llm_model: str = "gpt-4o-mini"
+    template_path: Path = Path("templates/basic.docx")
+    transcritor: str = "Jonas Rodrigues (via IA)"
+
+
 _DEFAULTS: dict[str, Any] = {
     "model_size": "large-v3",
     "language": "pt",
@@ -33,6 +44,14 @@ _DEFAULTS: dict[str, Any] = {
     "device": "cuda",
     "log_level": "INFO",
     "max_duration_hours": 0,
+}
+
+_ENRICH_DEFAULTS: dict[str, Any] = {
+    "llm_base_url": "https://api.openai.com/v1",
+    "llm_api_key": "",
+    "llm_model": "gpt-4o-mini",
+    "template_path": "templates/basic.docx",
+    "transcritor": "Jonas Rodrigues (via IA)",
 }
 
 
@@ -111,4 +130,40 @@ def _validate(merged: dict[str, Any]) -> TransskriboConfig:
         max_duration_hours=float(
             merged.get("max_duration_hours", _DEFAULTS["max_duration_hours"])
         ),
+    )
+
+
+def load_enrich_config(
+    file_config: dict[str, Any],
+    cli_overrides: dict[str, Any],
+) -> EnrichConfig:
+    """Load enrich config from the [enrich] section of a TOML dict.
+
+    Priority: defaults < file config [enrich] section < CLI overrides.
+    The API key falls back to the ENRICH_API_KEY environment variable.
+    """
+    enrich_section = file_config.get("enrich", {})
+    if not isinstance(enrich_section, dict):
+        enrich_section = {}
+
+    merged: dict[str, Any] = {**_ENRICH_DEFAULTS}
+    merged.update({k: v for k, v in enrich_section.items() if v is not None})
+    merged.update({k: v for k, v in cli_overrides.items() if v is not None})
+
+    # Resolve API key from env if not in config
+    if not merged.get("llm_api_key"):
+        env_key = os.environ.get("ENRICH_API_KEY", "")
+        if env_key:
+            merged["llm_api_key"] = env_key
+
+    # Convert template_path to Path
+    if "template_path" in merged:
+        merged["template_path"] = Path(merged["template_path"])
+
+    return EnrichConfig(
+        llm_base_url=merged.get("llm_base_url", _ENRICH_DEFAULTS["llm_base_url"]),
+        llm_api_key=merged.get("llm_api_key", _ENRICH_DEFAULTS["llm_api_key"]),
+        llm_model=merged.get("llm_model", _ENRICH_DEFAULTS["llm_model"]),
+        template_path=merged.get("template_path", Path(_ENRICH_DEFAULTS["template_path"])),
+        transcritor=merged.get("transcritor", _ENRICH_DEFAULTS["transcritor"]),
     )

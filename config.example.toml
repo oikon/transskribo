@@ -35,3 +35,23 @@ log_level = "INFO"
 # Maximum audio duration in hours. Files longer than this will be skipped.
 # Set to 0 to disable the limit.
 max_duration_hours = 0
+
+# --- Enrichment settings (used by `transskribo enrich`) ---
+[enrich]
+
+# Base URL for the OpenAI-compatible LLM API.
+# Supports OpenAI, Ollama, vLLM, Together, Groq, and others.
+llm_base_url = "https://api.openai.com/v1"
+
+# API key for the LLM service.
+# Can also be set via the ENRICH_API_KEY environment variable.
+llm_api_key = ""
+
+# Model name to use for enrichment.
+llm_model = "gpt-4o-mini"
+
+# Path to the .docx template for catalog document generation.
+template_path = "templates/basic.docx"
+
+# Name of the transcriber to include in generated documents.
+transcritor = "Jonas Rodrigues (via IA)"

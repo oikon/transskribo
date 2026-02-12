@@ -379,3 +379,127 @@ class TestFormatReport:
         )
         # 7200s = 2h 0m
         assert "2h" in report
+
+    def test_enrichment_progress_shown(self) -> None:
+        report = format_report(
+            stats={
+                "total_files": 10, "processed": 5, "failed": 0, "remaining": 5,
+                "total_audio_duration_processed": 0.0,
+                "enriched": 3, "not_enriched": 2,
+            },
+            timing_stats={"stages": {}, "avg_total_secs": 0.0, "speed_ratio": 0.0},
+            breakdown={},
+        )
+        assert "Enriched" in report
+        assert "3 / 5" in report
+
+    def test_enrichment_not_shown_when_zero(self) -> None:
+        report = format_report(
+            stats={
+                "total_files": 10, "processed": 5, "failed": 0, "remaining": 5,
+                "total_audio_duration_processed": 0.0,
+                "enriched": 0, "not_enriched": 0,
+            },
+            timing_stats={"stages": {}, "avg_total_secs": 0.0, "speed_ratio": 0.0},
+            breakdown={},
+        )
+        # "Enriched" should not appear in the row if there are no enrichable files
+        # The word "Enriched" as a row label won't appear
+        assert "0 / 0" not in report
+
+
+# ---------------------------------------------------------------------------
+# Enrichment stats tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnrichmentStatistics:
+    def test_counts_enriched_and_not_enriched(self, tmp_path: Path) -> None:
+        """compute_statistics should count enriched vs not-enriched result JSONs."""
+        import json
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+
+        # Create enriched result JSON
+        enriched = {
+            "segments": [{"text": "hello", "speaker": "S1"}],
+            "metadata": {"source_file": "a.mp3"},
+            "title": "Test",
+            "keywords": ["k"],
+            "summary": "s",
+            "concepts": {"c": "d"},
+        }
+        (output_dir / "enriched.json").write_text(json.dumps(enriched), encoding="utf-8")
+
+        # Create not-enriched result JSON
+        not_enriched = {
+            "segments": [{"text": "hello", "speaker": "S1"}],
+            "metadata": {"source_file": "b.mp3"},
+        }
+        (output_dir / "not_enriched.json").write_text(json.dumps(not_enriched), encoding="utf-8")
+
+        # Create non-transskribo JSON (should be ignored)
+        other = {"key": "value"}
+        (output_dir / "other.json").write_text(json.dumps(other), encoding="utf-8")
+
+        # Create audio files in input for total count
+        (input_dir / "a.mp3").write_bytes(b"fake")
+        (input_dir / "b.mp3").write_bytes(b"fake")
+
+        stats = compute_statistics({}, input_dir=input_dir, output_dir=output_dir)
+        assert stats["enriched"] == 1
+        assert stats["not_enriched"] == 1
+
+    def test_enrichment_counts_skip_transskribo_dir(self, tmp_path: Path) -> None:
+        """Files in .transskribo/ should be skipped for enrichment counting."""
+        import json
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Put a JSON in .transskribo/ — it should be ignored
+        ts_dir = output_dir / ".transskribo"
+        ts_dir.mkdir()
+        registry_like = {"segments": [], "metadata": {}}
+        (ts_dir / "registry.json").write_text(json.dumps(registry_like), encoding="utf-8")
+
+        stats = compute_statistics({}, output_dir=output_dir)
+        assert stats["enriched"] == 0
+        assert stats["not_enriched"] == 0
+
+    def test_enrichment_counts_without_output_dir(self) -> None:
+        """Without output_dir, enrichment counts should be 0."""
+        stats = compute_statistics({})
+        assert stats["enriched"] == 0
+        assert stats["not_enriched"] == 0
+
+    def test_mixed_enrichment_states(self, tmp_path: Path) -> None:
+        """Test with multiple files in various enrichment states."""
+        import json
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        base_doc = {"segments": [{"text": "t"}], "metadata": {"src": "x"}}
+
+        # 3 enriched
+        for i in range(3):
+            doc = {
+                **base_doc,
+                "title": f"Title {i}",
+                "keywords": [f"k{i}"],
+                "summary": f"s{i}",
+                "concepts": {f"c{i}": f"d{i}"},
+            }
+            (output_dir / f"enriched_{i}.json").write_text(json.dumps(doc), encoding="utf-8")
+
+        # 2 not enriched
+        for i in range(2):
+            (output_dir / f"plain_{i}.json").write_text(json.dumps(base_doc), encoding="utf-8")
+
+        stats = compute_statistics({}, output_dir=output_dir)
+        assert stats["enriched"] == 3
+        assert stats["not_enriched"] == 2

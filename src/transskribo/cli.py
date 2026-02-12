@@ -14,7 +14,7 @@ import typer
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
 
 from transskribo import __version__
-from transskribo.config import TransskriboConfig, load_config, merge_config
+from transskribo.config import EnrichConfig, TransskriboConfig, load_config, load_enrich_config, merge_config
 from transskribo.hasher import compute_hash, load_registry, lookup_hash, register_hash, save_registry
 from transskribo.logging_setup import setup_logging
 from transskribo.output import build_output_document, copy_duplicate_output, write_output
@@ -455,6 +455,166 @@ def _process_single_file(
         timing["total_secs"],
     )
     return "processed"
+
+
+@app.command()
+def enrich(
+    config: Optional[str] = typer.Option(None, "--config", help="Path to TOML config file (default: ./config.toml)"),
+    file: Optional[str] = typer.Option(None, "--file", help="Path to a single result.json to enrich"),
+    force: bool = typer.Option(False, "--force", help="Re-enrich already-enriched files"),
+) -> None:
+    """Enrich transcription results with LLM-extracted metadata and generate .docx."""
+    config_path = _resolve_config_path(config)
+    if not config_path.exists():
+        typer.echo(f"Error: Config file not found: {config_path}", err=True)
+        raise typer.Exit(code=1)
+
+    file_config = load_config(config_path)
+    enrich_cfg = load_enrich_config(file_config, {})
+
+    output_dir = Path(file_config.get("output_dir", "output"))
+
+    # Import enricher lazily to keep CLI startup fast
+    from transskribo.docx_writer import generate_docx
+    from transskribo.enricher import enrich_document, group_speaker_turns, is_enriched
+
+    if file is not None:
+        # Single-file mode
+        _enrich_single_file(Path(file), enrich_cfg, force, enrich_document, group_speaker_turns, is_enriched, generate_docx)
+    else:
+        # Batch mode
+        _enrich_batch(output_dir, enrich_cfg, force, enrich_document, group_speaker_turns, is_enriched, generate_docx)
+
+
+def _is_transskribo_result(document: dict[str, Any]) -> bool:
+    """Check if a JSON document is a transskribo result (has segments and metadata)."""
+    return "segments" in document and "metadata" in document
+
+
+def _enrich_single_file(
+    file_path: Path,
+    enrich_cfg: EnrichConfig,
+    force: bool,
+    enrich_document_fn: Any,
+    group_speaker_turns_fn: Any,
+    is_enriched_fn: Any,
+    generate_docx_fn: Any,
+) -> None:
+    """Enrich a single result JSON file."""
+    import json
+
+    if not file_path.exists():
+        logger.error("File not found: %s", file_path)
+        return
+
+    with file_path.open("r", encoding="utf-8") as f:
+        document = json.load(f)
+
+    if not force and is_enriched_fn(document):
+        logger.info("Already enriched, skipping: %s", file_path)
+        return
+
+    try:
+        document = enrich_document_fn(document, enrich_cfg)
+        _write_json_atomic(document, file_path)
+
+        # Generate docx
+        docx_path = file_path.with_suffix(".docx")
+        source_name = document.get("metadata", {}).get("source_file", file_path.stem)
+        concepts = {
+            "title": document.get("title", ""),
+            "keywords": document.get("keywords", []),
+            "summary": document.get("summary", ""),
+            "concepts": document.get("concepts", {}),
+        }
+        turns = group_speaker_turns_fn(document)
+        generate_docx_fn(docx_path, source_name, concepts, turns, enrich_cfg)
+        logger.info("Enriched: %s", file_path)
+    except Exception:
+        logger.exception("Error enriching %s", file_path)
+
+
+def _enrich_batch(
+    output_dir: Path,
+    enrich_cfg: EnrichConfig,
+    force: bool,
+    enrich_document_fn: Any,
+    group_speaker_turns_fn: Any,
+    is_enriched_fn: Any,
+    generate_docx_fn: Any,
+) -> None:
+    """Enrich all result JSON files in the output directory."""
+    import json
+
+    if not output_dir.exists():
+        logger.error("Output directory not found: %s", output_dir)
+        return
+
+    # Find all .json files recursively, skip .transskribo/ directory
+    json_files: list[Path] = []
+    for json_path in sorted(output_dir.rglob("*.json")):
+        # Skip files inside the .transskribo directory
+        try:
+            json_path.relative_to(output_dir / ".transskribo")
+            continue
+        except ValueError:
+            pass
+        json_files.append(json_path)
+
+    enriched_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for json_path in json_files:
+        try:
+            with json_path.open("r", encoding="utf-8") as f:
+                document = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Cannot read %s, skipping", json_path)
+            failed_count += 1
+            continue
+
+        # Only process transskribo result files
+        if not _is_transskribo_result(document):
+            continue
+
+        if not force and is_enriched_fn(document):
+            skipped_count += 1
+            continue
+
+        try:
+            document = enrich_document_fn(document, enrich_cfg)
+            _write_json_atomic(document, json_path)
+
+            # Generate docx
+            docx_path = json_path.with_suffix(".docx")
+            source_name = document.get("metadata", {}).get("source_file", json_path.stem)
+            concepts = {
+                "title": document.get("title", ""),
+                "keywords": document.get("keywords", []),
+                "summary": document.get("summary", ""),
+                "concepts": document.get("concepts", {}),
+            }
+            turns = group_speaker_turns_fn(document)
+            generate_docx_fn(docx_path, source_name, concepts, turns, enrich_cfg)
+
+            enriched_count += 1
+            logger.info("Enriched: %s", json_path)
+        except Exception:
+            failed_count += 1
+            logger.exception("Error enriching %s", json_path)
+
+    logger.info("--- Enrich Summary ---")
+    logger.info("Enriched: %d", enriched_count)
+    logger.info("Skipped (already enriched): %d", skipped_count)
+    logger.info("Failed: %d", failed_count)
+
+
+def _write_json_atomic(document: dict[str, Any], output_path: Path) -> None:
+    """Write JSON document atomically."""
+    from transskribo.output import write_output
+
+    write_output(document, output_path)
 
 
 @app.command()

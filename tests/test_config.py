@@ -9,8 +9,10 @@ import pytest
 import tomli_w
 
 from transskribo.config import (
+    EnrichConfig,
     TransskriboConfig,
     load_config,
+    load_enrich_config,
     merge_config,
 )
 
@@ -221,3 +223,81 @@ class TestConfigValidation:
         config = merge_config(sample_config_dict, {})
         assert config.max_duration_hours == 3.0
         assert isinstance(config.max_duration_hours, float)
+
+
+class TestEnrichConfig:
+    """Tests for EnrichConfig loading and defaults."""
+
+    def test_defaults(self) -> None:
+        config = load_enrich_config({}, {})
+        assert config.llm_base_url == "https://api.openai.com/v1"
+        assert config.llm_api_key == ""
+        assert config.llm_model == "gpt-4o-mini"
+        assert config.template_path == Path("templates/basic.docx")
+        assert config.transcritor == "Jonas Rodrigues (via IA)"
+
+    def test_loads_from_enrich_section(self) -> None:
+        file_config: dict[str, Any] = {
+            "enrich": {
+                "llm_base_url": "http://localhost:11434/v1",
+                "llm_api_key": "key-from-file",
+                "llm_model": "llama3",
+                "template_path": "custom/template.docx",
+                "transcritor": "Custom Name",
+            }
+        }
+        config = load_enrich_config(file_config, {})
+        assert config.llm_base_url == "http://localhost:11434/v1"
+        assert config.llm_api_key == "key-from-file"
+        assert config.llm_model == "llama3"
+        assert config.template_path == Path("custom/template.docx")
+        assert config.transcritor == "Custom Name"
+
+    def test_cli_overrides_file_config(self) -> None:
+        file_config: dict[str, Any] = {
+            "enrich": {"llm_model": "gpt-4"}
+        }
+        cli_overrides = {"llm_model": "gpt-3.5-turbo"}
+        config = load_enrich_config(file_config, cli_overrides)
+        assert config.llm_model == "gpt-3.5-turbo"
+
+    def test_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ENRICH_API_KEY", "key-from-env")
+        config = load_enrich_config({}, {})
+        assert config.llm_api_key == "key-from-env"
+
+    def test_file_key_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ENRICH_API_KEY", "key-from-env")
+        file_config: dict[str, Any] = {
+            "enrich": {"llm_api_key": "key-from-file"}
+        }
+        config = load_enrich_config(file_config, {})
+        assert config.llm_api_key == "key-from-file"
+
+    def test_cli_key_overrides_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ENRICH_API_KEY", "key-from-env")
+        file_config: dict[str, Any] = {
+            "enrich": {"llm_api_key": "key-from-file"}
+        }
+        config = load_enrich_config(file_config, {"llm_api_key": "key-from-cli"})
+        assert config.llm_api_key == "key-from-cli"
+
+    def test_template_path_is_path_object(self) -> None:
+        config = load_enrich_config({}, {})
+        assert isinstance(config.template_path, Path)
+
+    def test_frozen_dataclass(self) -> None:
+        config = load_enrich_config({}, {})
+        assert isinstance(config, EnrichConfig)
+        with pytest.raises(AttributeError):
+            config.llm_model = "different"  # type: ignore[misc]
+
+    def test_no_enrich_section_uses_defaults(self) -> None:
+        file_config: dict[str, Any] = {"input_dir": "/some/path"}
+        config = load_enrich_config(file_config, {})
+        assert config.llm_model == "gpt-4o-mini"
+
+    def test_non_dict_enrich_section_uses_defaults(self) -> None:
+        file_config: dict[str, Any] = {"enrich": "invalid"}
+        config = load_enrich_config(file_config, {})
+        assert config.llm_model == "gpt-4o-mini"
