@@ -65,3 +65,20 @@ Notes:
   - All 75 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-12 — Session 4: Transcriber (WhisperX Wrapper)
+Features: 7.01, 7.02, 7.03, 7.04, 7.05
+Status: success
+Notes:
+  - Implemented load_audio() wrapping whisperx.load_audio() in transcriber.py
+  - Implemented load_whisper_model(), transcribe(), align(), unload_whisper_model() for transcription stage
+  - align() loads alignment model, runs alignment, then frees alignment model and clears VRAM
+  - Implemented load_diarization_pipeline(), diarize(), assign_speakers(), unload_diarization_pipeline() for diarization stage
+  - DiarizationPipeline imported from whisperx.diarize (not on top-level whisperx module)
+  - Implemented process_file() orchestrator with per-stage timing via time.monotonic()
+  - Models loaded/unloaded per stage with finally blocks ensuring VRAM cleanup on errors
+  - Audio loaded once via load_audio(), ndarray passed to transcribe+align; pyannote takes audio_path
+  - Wrote 15 mock tests covering: individual function args, VRAM cleanup, full lifecycle order, timing collection, error cleanup, models never loaded simultaneously
+  - All 90 tests pass, ruff clean, pyright clean
+Issues:
+  - none
