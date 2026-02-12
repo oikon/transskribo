@@ -1,0 +1,10 @@
+input_dir = "data/inbox"
+output_dir = "data/output"
+hf_token = ""  # set via HF_TOKEN env var
+model_size = "large-v3"
+language = "pt"
+compute_type = "float16"
+batch_size = 8
+device = "cuda"
+log_level = "INFO"
+max_duration_hours = 0

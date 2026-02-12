@@ -1,3 +1,6 @@
+mounts:
+  - ~/.cache
+
 env:
   HF_TOKEN:
   TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: 1
