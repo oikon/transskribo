@@ -14,3 +14,23 @@
 #
 # This file is updated by each headless session after completing work.
 # It serves as a handoff log between sessions.
+
+## 2026-02-12 — Session 1: Project Skeleton & Configuration
+Features: 1.01, 1.02, 1.03, 2.01, 2.02, 2.03, 2.04, 2.05
+Status: success
+Notes:
+  - Created pyproject.toml with all dependencies and entry point
+  - Created src/transskribo/__init__.py with __version__
+  - Created src/transskribo/cli.py with Typer app and placeholder run command
+  - Created .gitignore for Python project
+  - Created config.example.toml with all documented options
+  - Created tests/conftest.py with shared fixtures (tmp dirs, sample config)
+  - Implemented TransskriboConfig frozen dataclass with all fields and defaults
+  - Implemented load_config() for TOML parsing
+  - Implemented merge_config() with defaults < file < CLI override priority
+  - Implemented config validation (input_dir exists, output_dir creatable, hf_token required)
+  - HF_TOKEN env var fallback works correctly
+  - Wrote 20 tests covering all config functionality
+  - All tests pass, ruff clean, pyright clean
+Issues:
+  - none
