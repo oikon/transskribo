@@ -103,3 +103,22 @@ Notes:
   - All 135 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-12 — Session 6: CLI Integration & Pipeline Wiring
+Features: 10.01, 10.02, 10.03, 10.04, 10.05, 10.06
+Status: success
+Notes:
+  - Rewrote cli.py with full run command: CLI args (--config, --input-dir, --output-dir, --model-size, --batch-size), config loading, logging setup, ffprobe fail-fast check
+  - Wired pipeline skeleton: scan_directory → filter_already_processed → validate_file per file, storing duration_secs for registry
+  - Added rich progress bar with file count, current file name, and elapsed time
+  - Wired hash-based duplicate detection: compute_hash → lookup_hash → copy_duplicate_output or transcribe
+  - Wired transcription: process_file → build_output_document → write_output → register_hash with timing + duration_audio_secs
+  - Per-file errors caught, logged, registered as "failed" in registry, batch continues
+  - Batch summary logged at end: processed, failed, skipped, invalid, duplicates, total time
+  - Implemented report command: loads config+registry, computes stats+timing+breakdown, prints rich formatted report
+  - Implemented version command: prints transskribo version
+  - Transcriber imported lazily inside _process_single_file to avoid loading torch/whisperx at CLI startup
+  - Wrote 16 tests covering CLI arg parsing, ffprobe check, config overrides, pipeline flow, invalid file skipping, duplicate handling, successful processing, error handling, batch summary, report command, version command, helper functions
+  - All 151 tests pass, ruff clean, pyright clean
+Issues:
+  - none
