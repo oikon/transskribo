@@ -25,6 +25,7 @@ venv/
 output/
 input/
 .build-sessions/
+config.toml
 
 # OS
 .DS_Store
