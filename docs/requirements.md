@@ -86,12 +86,12 @@ loading pyannote for diarization. This prevents OOM on 8GB VRAM.
 
 ## 10. CLI Integration
 
-- [ ] 10.01 — Implement `run` command in `cli.py`: parse CLI args (--config, --input-dir, --output-dir, --model-size, --batch-size), load config, set up logging. Call `check_ffprobe_available()` at startup — fail fast if missing
-- [ ] 10.02 — Wire `run` pipeline skeleton: scan input dir, filter already-processed files, validate each remaining file with `validate_file()` (skip invalid with logged reason), store each file's `ValidationResult.duration_secs` for later use in registry. Iterate over valid files with rich progress bar (overall count, current file name, elapsed time)
-- [ ] 10.03 — Wire hash check + duplicate handling into pipeline loop: compute hash, check registry, copy existing output if duplicate, update registry
-- [ ] 10.04 — Wire transcription into pipeline loop: call process_file, write output, register hash with timing data and `duration_audio_secs` (from the `ValidationResult.duration_secs` stored in 10.02), handle per-file errors (log and continue, register with status "failed" and error message). Add batch summary log at end of run (processed, failed, skipped, invalid, duplicates, total time)
-- [ ] 10.05 — Implement `report` command: load config, scan input dir for total file count, load registry, compute stats + timing stats + breakdown, print rich formatted report (no processing, no GPU needed). Implement `version` command: print version and key dependency versions
-- [ ] 10.06 — Write tests: CLI arg parsing, run with mocked pipeline, report with fixture registry, ffprobe check at startup
+- [x] 10.01 — Implement `run` command in `cli.py`: parse CLI args (--config, --input-dir, --output-dir, --model-size, --batch-size), load config, set up logging. Call `check_ffprobe_available()` at startup — fail fast if missing
+- [x] 10.02 — Wire `run` pipeline skeleton: scan input dir, filter already-processed files, validate each remaining file with `validate_file()` (skip invalid with logged reason), store each file's `ValidationResult.duration_secs` for later use in registry. Iterate over valid files with rich progress bar (overall count, current file name, elapsed time)
+- [x] 10.03 — Wire hash check + duplicate handling into pipeline loop: compute hash, check registry, copy existing output if duplicate, update registry
+- [x] 10.04 — Wire transcription into pipeline loop: call process_file, write output, register hash with timing data and `duration_audio_secs` (from the `ValidationResult.duration_secs` stored in 10.02), handle per-file errors (log and continue, register with status "failed" and error message). Add batch summary log at end of run (processed, failed, skipped, invalid, duplicates, total time)
+- [x] 10.05 — Implement `report` command: load config, scan input dir for total file count, load registry, compute stats + timing stats + breakdown, print rich formatted report (no processing, no GPU needed). Implement `version` command: print version and key dependency versions
+- [x] 10.06 — Write tests: CLI arg parsing, run with mocked pipeline, report with fixture registry, ffprobe check at startup
 
 **Done when:** `transskribo run --config config.toml` processes a batch. `transskribo report` prints stats. Tests pass.
 
