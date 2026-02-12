@@ -153,3 +153,26 @@ Notes:
   - All 180 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-12 — Session 9: Enrichment & Document Generation
+Features: 13.01, 13.02, 13.03, 13.04, 13.05, 13.06, 13.07, 13.08, 13.09, 13.10, 13.11
+Status: success
+Notes:
+  - Added openai and docxtpl dependencies to pyproject.toml
+  - Defined EnrichConfig frozen dataclass with fields: llm_base_url, llm_api_key, llm_model, template_path, transcritor
+  - Implemented load_enrich_config() reading [enrich] TOML section with defaults/file/CLI/env var merge
+  - Updated config.example.toml with [enrich] section and comments
+  - Created enricher.py with extract_text, group_speaker_turns, is_enriched, call_llm (OpenAI SDK), enrich_document
+  - Created docx_writer.py with generate_docx using docxtpl template rendering
+  - Added enrich CLI command: batch mode (all JSONs in output_dir), single-file mode (--file), --force flag
+  - Batch mode: discovers result JSONs, skips .transskribo/ dir, skips non-transskribo JSONs, skips already-enriched (unless --force), per-file error handling continues batch, generates .docx alongside each .json
+  - Updated compute_statistics() in reporter.py with enriched/not_enriched counts from output_dir scan
+  - Updated format_report() to display enrichment progress row (e.g., "Enriched: 42 / 100")
+  - Wrote 11 tests for EnrichConfig (defaults, TOML loading, env var fallback, CLI overrides, frozen)
+  - Wrote 18 tests for enricher.py (extract_text, group_speaker_turns, is_enriched, call_llm mock, enrich_document)
+  - Wrote 4 tests for docx_writer.py (create file, template not found, context vars, parent dirs)
+  - Wrote 12 tests for enrich CLI command (batch, single-file, skip, force, errors, docx, transskribo dir)
+  - Wrote 8 tests for enrichment reporter stats (enriched/not enriched counts, mixed states, skip logic)
+  - All 233 tests pass, ruff clean, pyright clean
+Issues:
+  - none
