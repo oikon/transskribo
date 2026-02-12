@@ -212,6 +212,28 @@ used, processing time) is added as a top-level field.
 - Per-file log entries: start, duration, speaker count, status, errors
 - Batch-level log entries: total progress, ETA
 
+### 9. Batch Limit Controls (CLI-Only)
+
+**Decision:** Two CLI-only flags (`--max-files`, `--max-minutes`) control
+batch size without touching the config file.
+
+**Rationale:** These are operational controls for a specific run, not
+permanent settings. A user might want to process 10 files to verify
+results, or limit a nightly run to 4 hours. Making them CLI-only avoids
+polluting the config with transient session parameters.
+
+**Semantics:**
+- `--max-files N`: Stop after N files are successfully **transcribed**
+  (result == "processed"). Duplicates, skips, errors, and invalid files
+  do NOT count toward the limit. Default 0 = no limit.
+- `--max-processing-minutes M`: Stop after M minutes of wall-clock
+  processing time have elapsed since the processing loop began (after
+  scan + validation). The current file always finishes — the check
+  happens before starting the next file. Default 0 = no limit.
+- Both checks sit alongside the existing `_shutdown_requested` flag at
+  the top of the file loop. When either limit is reached, the loop exits
+  cleanly and the batch summary reflects the stop reason.
+
 ## Data Flow
 
 ```mermaid
@@ -241,6 +263,9 @@ flowchart TD
     V2 --> C
     I --> C
     T --> C
+    T --> LIM{max-files or max-minutes reached?}
+    LIM -->|Yes| S
+    LIM -->|No| C
     C -->|All done| S[Reporter: generate summary]
     S --> U[Log final report]
 

@@ -101,3 +101,10 @@ loading pyannote for diarization. This prevents OOM on 8GB VRAM.
 - [x] 11.02 — Add `--dry-run` flag to `run` command: scan, validate, and report what would be processed, without actually processing
 - [x] 11.03 — Handle SIGINT/SIGTERM gracefully: finish current file, write registry, log partial summary, exit
 - [x] 11.04 — Write one integration test with a short audio fixture (< 5 seconds) that exercises the full pipeline end-to-end (can be skipped if no GPU in CI)
+
+## 12. Batch Limit Controls
+
+- [ ] 12.01 — Add `--max-files` CLI-only option to `run` command (int, default 0 = no limit). After each successfully transcribed file (result == "processed"), check if `processed_count >= max_files`. If so, exit the processing loop cleanly. Duplicates, skipped, invalid, and failed files do NOT count toward the limit. Log a message when the limit is reached
+- [ ] 12.02 — Add `--max-processing-minutes` CLI-only option to `run` command (float, default 0 = no limit). Before starting each file, check if wall-clock time since the processing loop began (after scan + validation) exceeds `max_processing_minutes * 60` seconds. If so, exit the processing loop cleanly. The current file always finishes — the check is before the next file. Log a message when the limit is reached
+- [ ] 12.03 — Update batch summary to indicate the stop reason when a limit was hit (e.g., "Stopped: max-files limit (10) reached" or "Stopped: max-processing-minutes limit (120.0) exceeded")
+- [ ] 12.04 — Write tests: `--max-files` stops after N successful transcriptions (not counting duplicates/errors), `--max-processing-minutes` stops after elapsed time, both limits log appropriate messages, limits of 0 mean no limit, interaction with `--dry-run` (limits are irrelevant in dry-run mode), interaction with SIGINT (shutdown takes priority)

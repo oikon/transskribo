@@ -140,3 +140,23 @@ SIGINT. Integration test exercises the full pipeline.
 - Integration test passes (or is properly skipped without GPU)
 - All tests pass, lint clean, types clean
 - Final full run: `uv run ruff check src/ tests/ && uv run pyright src/ && uv run pytest`
+
+---
+
+## Session 8 — Batch Limit Controls
+
+**Features:** 12.01, 12.02, 12.03, 12.04
+
+**Goal:** Two CLI-only flags let users cap a processing run by number of
+successfully transcribed files or by wall-clock time. The pipeline loop
+checks these limits alongside the existing shutdown flag.
+
+**Preconditions:** Session 7 complete
+
+**Verification:**
+- `transskribo run --config config.toml --max-files 5` stops after 5 successful transcriptions
+- `transskribo run --config config.toml --max-processing-minutes 30` stops after 30 minutes
+- Duplicates, errors, and invalid files do not count toward `--max-files`
+- Batch summary shows the stop reason
+- `--max-files 0` and `--max-processing-minutes 0` mean no limit (default behavior)
+- All tests pass, lint clean, types clean
