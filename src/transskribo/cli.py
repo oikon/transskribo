@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from types import FrameType
 from typing import Any, Optional
 
 import typer
@@ -26,6 +28,9 @@ from transskribo.scanner import AudioFile, filter_already_processed, scan_direct
 from transskribo.validator import check_ffprobe_available, validate_file
 
 logger = logging.getLogger(__name__)
+
+# Flag for graceful shutdown — set by signal handler
+_shutdown_requested = False
 
 app = typer.Typer(
     name="transskribo",
@@ -73,6 +78,8 @@ def run(
     output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Override output directory"),
     model_size: Optional[str] = typer.Option(None, "--model-size", help="Override model size"),
     batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Override batch size"),
+    retry_failed: bool = typer.Option(False, "--retry-failed", help="Re-process files that previously failed"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Scan and validate without processing"),
 ) -> None:
     """Run batch transcription processing."""
     config_path = Path(config)
@@ -99,19 +106,93 @@ def run(
     logger.info("Input: %s", cfg.input_dir)
     logger.info("Output: %s", cfg.output_dir)
     logger.info("Model: %s (compute=%s, device=%s)", cfg.model_size, cfg.compute_type, cfg.device)
+    if retry_failed:
+        logger.info("Retry-failed mode: will re-process previously failed files")
+    if dry_run:
+        logger.info("Dry-run mode: will scan and validate only, no processing")
 
     # --- Pipeline ---
-    _run_pipeline(cfg)
+    _run_pipeline(cfg, retry_failed=retry_failed, dry_run=dry_run)
 
 
-def _run_pipeline(cfg: TransskriboConfig) -> None:
+def _run_pipeline(
+    cfg: TransskriboConfig,
+    *,
+    retry_failed: bool = False,
+    dry_run: bool = False,
+) -> None:
     """Execute the full processing pipeline."""
+    global _shutdown_requested  # noqa: PLW0603
+    _shutdown_requested = False
+
+    # Install signal handlers for graceful shutdown
+    prev_sigint = signal.getsignal(signal.SIGINT)
+    prev_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def _handle_shutdown(signum: int, frame: FrameType | None) -> None:
+        global _shutdown_requested  # noqa: PLW0603
+        _shutdown_requested = True
+        sig_name = signal.Signals(signum).name
+        logger.info("Received %s — will finish current file and exit", sig_name)
+
+    signal.signal(signal.SIGINT, _handle_shutdown)
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+
+    try:
+        _run_pipeline_inner(cfg, retry_failed=retry_failed, dry_run=dry_run)
+    finally:
+        # Restore original signal handlers
+        signal.signal(signal.SIGINT, prev_sigint)
+        signal.signal(signal.SIGTERM, prev_sigterm)
+
+
+def _get_failed_hashes(registry: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return a mapping of source_path -> entry for failed entries."""
+    failed: dict[str, dict[str, Any]] = {}
+    for file_hash, entry in registry.items():
+        if entry.get("status") == "failed":
+            source = entry.get("source_path", "")
+            if source:
+                failed[source] = entry
+    return failed
+
+
+def _run_pipeline_inner(
+    cfg: TransskriboConfig,
+    *,
+    retry_failed: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Inner pipeline logic, separated for signal handler cleanup."""
     batch_start = time.monotonic()
+
+    # Load registry early (needed for retry-failed)
+    reg_path = _registry_path(cfg)
+    registry = load_registry(reg_path)
 
     # Scan and filter
     all_files = scan_directory(cfg.input_dir, cfg.output_dir)
     pending_files = filter_already_processed(all_files)
     skipped_existing = len(all_files) - len(pending_files)
+
+    # If retry-failed, re-include files that have status "failed" in registry
+    if retry_failed:
+        failed_sources = _get_failed_hashes(registry)
+        if failed_sources:
+            # Find files that were filtered out (already have output) but are failed
+            already_done = [f for f in all_files if f not in pending_files]
+            retry_files: list[AudioFile] = []
+            for f in already_done:
+                if str(f.path) in failed_sources:
+                    retry_files.append(f)
+            # Also check pending files against failed sources (their output
+            # might not exist, but they might still be in registry as failed)
+            if retry_files:
+                logger.info(
+                    "Retrying %d previously failed files", len(retry_files)
+                )
+                pending_files = retry_files + pending_files
+                skipped_existing -= len(retry_files)
 
     logger.info(
         "Found %d files total, %d already processed, %d to process",
@@ -150,14 +231,22 @@ def _run_pipeline(cfg: TransskriboConfig) -> None:
         invalid_count,
     )
 
-    # Load registry
-    reg_path = _registry_path(cfg)
-    registry = load_registry(reg_path)
+    # Dry-run: report what would be processed and exit
+    if dry_run:
+        logger.info("--- Dry Run Summary ---")
+        logger.info("Would process %d files:", len(valid_files))
+        for audio_file, duration_secs in valid_files:
+            dur_str = f" ({duration_secs:.1f}s)" if duration_secs else ""
+            logger.info("  %s%s", audio_file.relative_path, dur_str)
+        logger.info("Skipped (already done): %d", skipped_existing)
+        logger.info("Invalid (rejected): %d", invalid_count)
+        return
 
     # Process files with progress bar
     processed_count = 0
     failed_count = 0
     duplicate_count = 0
+    interrupted = False
 
     with Progress(
         TextColumn("[bold blue]{task.description}"),
@@ -173,6 +262,12 @@ def _run_pipeline(cfg: TransskriboConfig) -> None:
         )
 
         for audio_file, duration_secs in valid_files:
+            # Check for graceful shutdown before starting next file
+            if _shutdown_requested:
+                interrupted = True
+                logger.info("Shutdown requested — stopping before %s", audio_file.relative_path)
+                break
+
             progress.update(task, current_file=str(audio_file.relative_path))
 
             try:
@@ -211,7 +306,8 @@ def _run_pipeline(cfg: TransskriboConfig) -> None:
     batch_secs = time.monotonic() - batch_start
 
     # Batch summary
-    logger.info("--- Batch Summary ---")
+    summary_label = "Partial Batch Summary (interrupted)" if interrupted else "Batch Summary"
+    logger.info("--- %s ---", summary_label)
     logger.info("Processed: %d", processed_count)
     logger.info("Failed: %d", failed_count)
     logger.info("Skipped (already done): %d", skipped_existing)

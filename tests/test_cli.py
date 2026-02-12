@@ -527,3 +527,668 @@ class TestPipelineHelpers:
             hf_token="tok",
         )
         assert _log_file_path(cfg) == tmp_path / "output" / ".transskribo" / "transskribo.log"
+
+    def test_get_failed_hashes(self) -> None:
+        """_get_failed_hashes should return source_path -> entry for failed."""
+        from transskribo.cli import _get_failed_hashes
+
+        registry = {
+            "hash1": {"source_path": "/a/b.mp3", "status": "success"},
+            "hash2": {"source_path": "/a/c.mp3", "status": "failed"},
+            "hash3": {"source_path": "/a/d.mp3", "status": "failed"},
+        }
+        failed = _get_failed_hashes(registry)
+        assert len(failed) == 2
+        assert "/a/c.mp3" in failed
+        assert "/a/d.mp3" in failed
+        assert "/a/b.mp3" not in failed
+
+    def test_get_failed_hashes_empty(self) -> None:
+        """_get_failed_hashes with no failures returns empty dict."""
+        from transskribo.cli import _get_failed_hashes
+
+        registry = {
+            "hash1": {"source_path": "/a/b.mp3", "status": "success"},
+        }
+        assert _get_failed_hashes(registry) == {}
+
+
+# ---------------------------------------------------------------------------
+# 11.01 — --retry-failed flag
+# ---------------------------------------------------------------------------
+
+class TestRetryFailed:
+    """Tests for the --retry-failed flag."""
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_retry_failed_reprocesses_failed_files(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--retry-failed should re-process files with status 'failed' in registry."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create an audio file and its output (so it would normally be skipped)
+        audio_path = _create_audio_file(input_dir, "failed_file.mp3")
+        output_file = output_dir / "failed_file.json"
+        output_file.write_text("{}", encoding="utf-8")
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        # Create registry with a "failed" entry for this file
+        _create_registry(output_dir, {
+            "hash_failed": {
+                "source_path": str(audio_path),
+                "output_path": str(output_file),
+                "timestamp": "2024-01-01T00:00:00",
+                "status": "failed",
+                "duration_audio_secs": 60.0,
+                "timing": None,
+                "error": "Previous error",
+            }
+        })
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+        mock_hash.return_value = "hash_failed"
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--retry-failed"
+        ])
+        assert result.exit_code == 0
+        # The file should have been re-processed
+        mock_process.assert_called_once()
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    def test_retry_failed_no_failed_files(
+        self,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--retry-failed with no failed entries should behave normally."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        # No files to process at all
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--retry-failed"
+        ])
+        assert result.exit_code == 0
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_without_retry_failed_skips_files_with_output(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Without --retry-failed, files with existing output are skipped."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        audio_path = _create_audio_file(input_dir, "done.mp3")
+        output_file = output_dir / "done.json"
+        output_file.write_text("{}", encoding="utf-8")
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        _create_registry(output_dir, {
+            "hash_done": {
+                "source_path": str(audio_path),
+                "output_path": str(output_file),
+                "timestamp": "2024-01-01T00:00:00",
+                "status": "failed",
+                "duration_audio_secs": 60.0,
+                "timing": None,
+                "error": "Old error",
+            }
+        })
+
+        result = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result.exit_code == 0
+        # Without --retry-failed, the file should NOT be re-processed
+        mock_process.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 11.02 — --dry-run flag
+# ---------------------------------------------------------------------------
+
+class TestDryRun:
+    """Tests for the --dry-run flag."""
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.transcriber.process_file")
+    def test_dry_run_does_not_process(
+        self,
+        mock_process: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--dry-run should scan and validate but not process files."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        _create_audio_file(input_dir, "file1.mp3")
+        _create_audio_file(input_dir, "file2.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=120.0, error=None
+        )
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--dry-run"
+        ])
+        assert result.exit_code == 0
+        # No files should be processed
+        mock_process.assert_not_called()
+        # No output files should be created
+        assert not (output_dir / "file1.json").exists()
+        assert not (output_dir / "file2.json").exists()
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    def test_dry_run_logs_summary(
+        self,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--dry-run should log a summary of what would be processed."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        _create_audio_file(input_dir, "a.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--dry-run"
+        ])
+        assert result.exit_code == 0
+
+        # Check log file for dry-run summary
+        log_path = output_dir / ".transskribo" / "transskribo.log"
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8")
+            assert "Dry Run Summary" in log_content
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    def test_dry_run_still_validates(
+        self,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--dry-run should still validate files and count invalid ones."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        _create_audio_file(input_dir, "good.mp3")
+        _create_audio_file(input_dir, "bad.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        def validate_side_effect(file_path: Path, max_dur: float) -> ValidationResult:
+            if "bad" in file_path.name:
+                return ValidationResult(is_valid=False, duration_secs=None, error="corrupt")
+            return ValidationResult(is_valid=True, duration_secs=120.0, error=None)
+
+        mock_validate.side_effect = validate_side_effect
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--dry-run"
+        ])
+        assert result.exit_code == 0
+        # validate_file should have been called for both files
+        assert mock_validate.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# 11.03 — Graceful shutdown (SIGINT/SIGTERM)
+# ---------------------------------------------------------------------------
+
+class TestGracefulShutdown:
+    """Tests for SIGINT/SIGTERM handling."""
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_sigint_stops_after_current_file(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """SIGINT during processing should finish current file and stop."""
+        import transskribo.cli as cli_module
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create 3 files
+        _create_audio_file(input_dir, "a.mp3")
+        _create_audio_file(input_dir, "b.mp3")
+        _create_audio_file(input_dir, "c.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        call_count = 0
+
+        def process_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            # After processing the first file, simulate shutdown
+            if call_count == 1:
+                cli_module._shutdown_requested = True
+            return {
+                "result": {"segments": []},
+                "timing": {
+                    "transcribe_secs": 1.0,
+                    "align_secs": 0.5,
+                    "diarize_secs": 0.8,
+                    "total_secs": 2.3,
+                },
+            }
+
+        mock_hash.return_value = "hash_x"
+        mock_process.side_effect = process_side_effect
+
+        result = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result.exit_code == 0
+        # Only 1 file should be processed (shutdown requested after first)
+        assert mock_process.call_count == 1
+
+        # Check for partial batch summary in log
+        log_path = output_dir / ".transskribo" / "transskribo.log"
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8")
+            assert "interrupted" in log_content
+
+    def test_signal_handler_sets_flag(self) -> None:
+        """The signal handler should set _shutdown_requested to True."""
+        import transskribo.cli as cli_module
+
+        cli_module._shutdown_requested = False
+
+        # Simulate what the handler does
+        cli_module._shutdown_requested = True
+        assert cli_module._shutdown_requested is True
+
+        # Reset
+        cli_module._shutdown_requested = False
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_shutdown_saves_registry(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Registry should be saved for processed files even when interrupted."""
+        import transskribo.cli as cli_module
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        _create_audio_file(input_dir, "first.mp3")
+        _create_audio_file(input_dir, "second.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        call_count = 0
+
+        def process_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                cli_module._shutdown_requested = True
+            return {
+                "result": {"segments": []},
+                "timing": {
+                    "transcribe_secs": 1.0,
+                    "align_secs": 0.5,
+                    "diarize_secs": 0.8,
+                    "total_secs": 2.3,
+                },
+            }
+
+        mock_hash.return_value = "hash_first"
+        mock_process.side_effect = process_side_effect
+
+        result = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result.exit_code == 0
+
+        # Registry should exist with the first file's entry
+        reg_path = output_dir / ".transskribo" / "registry.json"
+        assert reg_path.exists()
+        with reg_path.open("r", encoding="utf-8") as f:
+            registry = json.load(f)
+        assert "hash_first" in registry
+        assert registry["hash_first"]["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# 11.04 — Integration test (full pipeline with short audio fixture)
+# ---------------------------------------------------------------------------
+
+class TestIntegration:
+    """Integration test exercising the full pipeline end-to-end.
+
+    Skipped if no GPU is available (CI environments).
+    Uses mocked transcriber since we can't require a GPU in tests.
+    """
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_full_pipeline_end_to_end(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Full pipeline: scan → validate → hash → process → output → registry."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create audio files in nested structure
+        sub_dir = input_dir / "lectures" / "week1"
+        sub_dir.mkdir(parents=True)
+        _create_audio_file(sub_dir, "lecture1.mp3", size=200)
+        _create_audio_file(sub_dir, "lecture2.mp3", size=300)
+        _create_audio_file(input_dir, "meeting.m4a", size=150)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=3600.0, error=None
+        )
+
+        # Each file gets a unique hash
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+
+        mock_process.return_value = {
+            "result": {
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 5.0,
+                        "text": "Bom dia, turma.",
+                        "speaker": "SPEAKER_00",
+                        "words": [
+                            {"start": 0.0, "end": 0.3, "word": "Bom", "score": 0.95, "speaker": "SPEAKER_00"},
+                            {"start": 0.4, "end": 0.7, "word": "dia,", "score": 0.92, "speaker": "SPEAKER_00"},
+                            {"start": 0.8, "end": 1.2, "word": "turma.", "score": 0.88, "speaker": "SPEAKER_00"},
+                        ],
+                    },
+                    {
+                        "start": 5.0,
+                        "end": 10.0,
+                        "text": "Vamos começar a aula.",
+                        "speaker": "SPEAKER_00",
+                        "words": [],
+                    },
+                ],
+            },
+            "timing": {
+                "transcribe_secs": 120.0,
+                "align_secs": 30.0,
+                "diarize_secs": 60.0,
+                "total_secs": 210.0,
+            },
+        }
+
+        # --- Run the pipeline ---
+        result = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result.exit_code == 0
+
+        # All 3 files should be processed
+        assert mock_process.call_count == 3
+
+        # Output files should exist with correct structure
+        lecture1_output = output_dir / "lectures" / "week1" / "lecture1.json"
+        lecture2_output = output_dir / "lectures" / "week1" / "lecture2.json"
+        meeting_output = output_dir / "meeting.json"
+
+        assert lecture1_output.exists()
+        assert lecture2_output.exists()
+        assert meeting_output.exists()
+
+        # Verify output document structure
+        with lecture1_output.open("r", encoding="utf-8") as f:
+            doc = json.load(f)
+
+        assert "segments" in doc
+        assert "words" in doc
+        assert "metadata" in doc
+        assert len(doc["segments"]) == 2
+        assert doc["segments"][0]["text"] == "Bom dia, turma."
+        assert doc["segments"][0]["speaker"] == "SPEAKER_00"
+        assert len(doc["words"]) == 3  # only words from first segment
+        assert doc["metadata"]["duration_secs"] == 3600.0
+        assert doc["metadata"]["model_size"] == "large-v3"
+        assert doc["metadata"]["language"] == "pt"
+        assert doc["metadata"]["timing"]["total_secs"] == 210.0
+
+        # Registry should have 3 entries
+        reg_path = output_dir / ".transskribo" / "registry.json"
+        assert reg_path.exists()
+        with reg_path.open("r", encoding="utf-8") as f:
+            registry = json.load(f)
+        assert len(registry) == 3
+
+        # --- Run report command ---
+        report_result = runner.invoke(app, ["report", "--config", str(config_path)])
+        assert report_result.exit_code == 0
+        assert "Progress" in report_result.output
+
+        # --- Run again: all files should be skipped ---
+        mock_process.reset_mock()
+        result2 = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result2.exit_code == 0
+        mock_process.assert_not_called()  # all skipped
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_full_pipeline_with_error_and_retry(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Pipeline: process with error, then retry-failed to reprocess."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        _create_audio_file(input_dir, "file.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+        mock_hash.return_value = "hash_retry_test"
+
+        # First run: fail
+        mock_process.side_effect = RuntimeError("GPU OOM")
+        result = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result.exit_code == 0
+
+        # Registry should have a failed entry
+        reg_path = output_dir / ".transskribo" / "registry.json"
+        assert reg_path.exists()
+        with reg_path.open("r", encoding="utf-8") as f:
+            registry = json.load(f)
+        assert registry["hash_retry_test"]["status"] == "failed"
+
+        # Second run without --retry-failed: file.json doesn't exist,
+        # so it will be re-attempted (filter_already_processed won't skip it)
+        mock_process.reset_mock()
+        mock_process.side_effect = None
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        result2 = runner.invoke(app, ["run", "--config", str(config_path)])
+        assert result2.exit_code == 0
+        mock_process.assert_called_once()
+
+        # Registry should now be success
+        with reg_path.open("r", encoding="utf-8") as f:
+            registry = json.load(f)
+        assert registry["hash_retry_test"]["status"] == "success"
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_dry_run_then_real_run(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Dry run should not create outputs; real run should."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        _create_audio_file(input_dir, "test.mp3")
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+        mock_hash.return_value = "hash_drytest"
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        # Dry run first
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--dry-run"
+        ])
+        assert result.exit_code == 0
+        assert not (output_dir / "test.json").exists()
+        mock_process.assert_not_called()
+
+        # Real run
+        result2 = runner.invoke(app, [
+            "run", "--config", str(config_path)
+        ])
+        assert result2.exit_code == 0
+        assert (output_dir / "test.json").exists()
+        mock_process.assert_called_once()

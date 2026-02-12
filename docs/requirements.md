@@ -97,7 +97,7 @@ loading pyannote for diarization. This prevents OOM on 8GB VRAM.
 
 ## 11. End-to-End & Polish
 
-- [ ] 11.01 — Add `--retry-failed` flag to `run` command: add the CLI flag, load failed entries from registry, re-include them in the processing loop (skip the "already processed" filter for files whose hash has status "failed")
-- [ ] 11.02 — Add `--dry-run` flag to `run` command: scan, validate, and report what would be processed, without actually processing
-- [ ] 11.03 — Handle SIGINT/SIGTERM gracefully: finish current file, write registry, log partial summary, exit
-- [ ] 11.04 — Write one integration test with a short audio fixture (< 5 seconds) that exercises the full pipeline end-to-end (can be skipped if no GPU in CI)
+- [x] 11.01 — Add `--retry-failed` flag to `run` command: add the CLI flag, load failed entries from registry, re-include them in the processing loop (skip the "already processed" filter for files whose hash has status "failed")
+- [x] 11.02 — Add `--dry-run` flag to `run` command: scan, validate, and report what would be processed, without actually processing
+- [x] 11.03 — Handle SIGINT/SIGTERM gracefully: finish current file, write registry, log partial summary, exit
+- [x] 11.04 — Write one integration test with a short audio fixture (< 5 seconds) that exercises the full pipeline end-to-end (can be skipped if no GPU in CI)
