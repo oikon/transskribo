@@ -94,6 +94,8 @@ def run(
     batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Override batch size"),
     retry_failed: bool = typer.Option(False, "--retry-failed", help="Re-process files that previously failed"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Scan and validate without processing"),
+    max_files: int = typer.Option(0, "--max-files", help="Stop after N successful transcriptions (0 = no limit)"),
+    max_processing_minutes: float = typer.Option(0, "--max-processing-minutes", help="Stop after M minutes of processing time (0 = no limit)"),
 ) -> None:
     """Run batch transcription processing."""
     config_path = _resolve_config_path(config)
@@ -124,9 +126,19 @@ def run(
         logger.info("Retry-failed mode: will re-process previously failed files")
     if dry_run:
         logger.info("Dry-run mode: will scan and validate only, no processing")
+    if max_files > 0:
+        logger.info("Max files limit: %d", max_files)
+    if max_processing_minutes > 0:
+        logger.info("Max processing minutes limit: %.1f", max_processing_minutes)
 
     # --- Pipeline ---
-    _run_pipeline(cfg, retry_failed=retry_failed, dry_run=dry_run)
+    _run_pipeline(
+        cfg,
+        retry_failed=retry_failed,
+        dry_run=dry_run,
+        max_files=max_files,
+        max_processing_minutes=max_processing_minutes,
+    )
 
 
 def _run_pipeline(
@@ -134,6 +146,8 @@ def _run_pipeline(
     *,
     retry_failed: bool = False,
     dry_run: bool = False,
+    max_files: int = 0,
+    max_processing_minutes: float = 0,
 ) -> None:
     """Execute the full processing pipeline."""
     global _shutdown_requested  # noqa: PLW0603
@@ -153,7 +167,13 @@ def _run_pipeline(
     signal.signal(signal.SIGTERM, _handle_shutdown)
 
     try:
-        _run_pipeline_inner(cfg, retry_failed=retry_failed, dry_run=dry_run)
+        _run_pipeline_inner(
+            cfg,
+            retry_failed=retry_failed,
+            dry_run=dry_run,
+            max_files=max_files,
+            max_processing_minutes=max_processing_minutes,
+        )
     finally:
         # Restore original signal handlers
         signal.signal(signal.SIGINT, prev_sigint)
@@ -176,6 +196,8 @@ def _run_pipeline_inner(
     *,
     retry_failed: bool = False,
     dry_run: bool = False,
+    max_files: int = 0,
+    max_processing_minutes: float = 0,
 ) -> None:
     """Inner pipeline logic, separated for signal handler cleanup."""
     batch_start = time.monotonic()
@@ -260,7 +282,9 @@ def _run_pipeline_inner(
     processed_count = 0
     failed_count = 0
     duplicate_count = 0
-    interrupted = False
+    stop_reason: str | None = None
+    loop_start = time.monotonic()
+    max_processing_secs = max_processing_minutes * 60 if max_processing_minutes > 0 else 0
 
     with Progress(
         TextColumn("[bold blue]{task.description}"),
@@ -278,9 +302,23 @@ def _run_pipeline_inner(
         for audio_file, duration_secs in valid_files:
             # Check for graceful shutdown before starting next file
             if _shutdown_requested:
-                interrupted = True
+                stop_reason = "Stopped: interrupted by signal"
                 logger.info("Shutdown requested — stopping before %s", audio_file.relative_path)
                 break
+
+            # Check max-files limit
+            if max_files > 0 and processed_count >= max_files:
+                stop_reason = f"Stopped: max-files limit ({max_files}) reached"
+                logger.info("%s", stop_reason)
+                break
+
+            # Check max-processing-minutes limit
+            if max_processing_secs > 0:
+                elapsed = time.monotonic() - loop_start
+                if elapsed >= max_processing_secs:
+                    stop_reason = f"Stopped: max-processing-minutes limit ({max_processing_minutes}) exceeded"
+                    logger.info("%s", stop_reason)
+                    break
 
             progress.update(task, current_file=str(audio_file.relative_path))
 
@@ -320,7 +358,7 @@ def _run_pipeline_inner(
     batch_secs = time.monotonic() - batch_start
 
     # Batch summary
-    summary_label = "Partial Batch Summary (interrupted)" if interrupted else "Batch Summary"
+    summary_label = "Partial Batch Summary (interrupted)" if stop_reason else "Batch Summary"
     logger.info("--- %s ---", summary_label)
     logger.info("Processed: %d", processed_count)
     logger.info("Failed: %d", failed_count)
@@ -328,6 +366,8 @@ def _run_pipeline_inner(
     logger.info("Invalid (rejected): %d", invalid_count)
     logger.info("Duplicates: %d", duplicate_count)
     logger.info("Total time: %.1fs", batch_secs)
+    if stop_reason:
+        logger.info("%s", stop_reason)
 
 
 def _process_single_file(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -1250,3 +1251,627 @@ class TestIntegration:
         assert result2.exit_code == 0
         assert (output_dir / "test.json").exists()
         mock_process.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 12.01/12.02/12.03/12.04 — Batch limit controls
+# ---------------------------------------------------------------------------
+
+class TestMaxFiles:
+    """Tests for --max-files batch limit."""
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_max_files_stops_after_n_successful(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--max-files N stops after N successful transcriptions."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create 5 audio files
+        for i in range(5):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--max-files", "2"
+        ])
+        assert result.exit_code == 0
+        # Only 2 files should be processed
+        assert mock_process.call_count == 2
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_max_files_does_not_count_duplicates(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Duplicates do not count toward --max-files limit."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create 3 files: first is a duplicate, rest are new
+        _create_audio_file(input_dir, "dup.mp3", size=100)
+        _create_audio_file(input_dir, "new1.mp3", size=200)
+        _create_audio_file(input_dir, "new2.mp3", size=300)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        # Create existing output for the duplicate
+        existing_output = output_dir / "original.json"
+        existing_doc = {
+            "segments": [], "words": [],
+            "metadata": {
+                "source_file": "/orig/file.mp3", "file_hash": "hash_dup",
+                "duration_secs": 60.0, "num_speakers": 0,
+                "model_size": "large-v3", "language": "pt",
+                "processed_at": "2024-01-01T00:00:00", "timing": None,
+            },
+        }
+        existing_output.write_text(json.dumps(existing_doc), encoding="utf-8")
+
+        _create_registry(output_dir, {
+            "hash_dup": {
+                "source_path": "/orig/file.mp3",
+                "output_path": str(existing_output),
+                "timestamp": "2024-01-01T00:00:00",
+                "status": "success",
+                "duration_audio_secs": 60.0,
+                "timing": None,
+                "error": None,
+            }
+        })
+
+        call_count = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal call_count
+            call_count += 1
+            if "dup" in path.name:
+                return "hash_dup"
+            return f"hash_new_{call_count}"
+
+        mock_hash.side_effect = hash_side_effect
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        # Set max-files=2 — the duplicate shouldn't count, so we expect
+        # 2 actual transcriptions plus 1 duplicate copy
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--max-files", "2"
+        ])
+        assert result.exit_code == 0
+        # 2 successful transcriptions (new1, new2)
+        assert mock_process.call_count == 2
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_max_files_does_not_count_errors(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Failed files do not count toward --max-files limit."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Create 4 files
+        for i in range(4):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+
+        call_count = 0
+
+        def process_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            # First call fails, rest succeed
+            if call_count == 1:
+                raise RuntimeError("GPU OOM")
+            return {
+                "result": {"segments": []},
+                "timing": {
+                    "transcribe_secs": 1.0,
+                    "align_secs": 0.5,
+                    "diarize_secs": 0.8,
+                    "total_secs": 2.3,
+                },
+            }
+
+        mock_process.side_effect = process_side_effect
+
+        # max-files=2: the error doesn't count, so we need 2 successes
+        # file0 = error, file1 = success, file2 = success, file3 = not reached
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--max-files", "2"
+        ])
+        assert result.exit_code == 0
+        # 3 files attempted (1 error + 2 success), 4th not started
+        assert mock_process.call_count == 3
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_max_files_zero_means_no_limit(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--max-files 0 means no limit (default behavior)."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(3):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--max-files", "0"
+        ])
+        assert result.exit_code == 0
+        # All 3 files should be processed
+        assert mock_process.call_count == 3
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_max_files_logs_stop_reason(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Batch summary should include max-files stop reason."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(3):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--max-files", "1"
+        ])
+        assert result.exit_code == 0
+
+        log_path = output_dir / ".transskribo" / "transskribo.log"
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8")
+            assert "max-files limit (1) reached" in log_content
+            assert "interrupted" in log_content.lower()
+
+
+class TestMaxProcessingMinutes:
+    """Tests for --max-processing-minutes batch limit."""
+
+    def test_max_processing_minutes_stops_after_elapsed(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """--max-processing-minutes stops after elapsed time exceeds limit."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(5):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        # Track when files are processed to advance simulated time
+        files_processed = 0
+        base = 1000.0
+
+        def process_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal files_processed
+            files_processed += 1
+            return {
+                "result": {"segments": []},
+                "timing": {
+                    "transcribe_secs": 1.0,
+                    "align_secs": 0.5,
+                    "diarize_secs": 0.8,
+                    "total_secs": 2.3,
+                },
+            }
+
+        # After the first file is processed, monotonic jumps past the limit.
+        # Rich Progress calls time.monotonic() internally, so we can't use
+        # a simple counter. Instead, check files_processed to decide the time.
+        def fake_monotonic() -> float:
+            if files_processed >= 1:
+                return base + 200.0  # past 60s limit
+            return base + 1.0
+
+        with patch.object(time, "monotonic", fake_monotonic), \
+             patch("transskribo.cli.check_ffprobe_available"), \
+             patch("transskribo.cli.validate_file", return_value=ValidationResult(is_valid=True, duration_secs=60.0, error=None)), \
+             patch("transskribo.cli.compute_hash", side_effect=hash_side_effect), \
+             patch("transskribo.transcriber.process_file", side_effect=process_side_effect) as mock_process:
+            result = runner.invoke(app, [
+                "run", "--config", str(config_path),
+                "--max-processing-minutes", "1"
+            ])
+        assert result.exit_code == 0
+        # Only 1 file should be processed before time limit hit
+        assert mock_process.call_count == 1
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_max_processing_minutes_zero_means_no_limit(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--max-processing-minutes 0 means no limit (default behavior)."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(3):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+        mock_process.return_value = {
+            "result": {"segments": []},
+            "timing": {
+                "transcribe_secs": 1.0,
+                "align_secs": 0.5,
+                "diarize_secs": 0.8,
+                "total_secs": 2.3,
+            },
+        }
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path),
+            "--max-processing-minutes", "0"
+        ])
+        assert result.exit_code == 0
+        assert mock_process.call_count == 3
+
+    def test_max_processing_minutes_logs_stop_reason(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Batch summary should include max-processing-minutes stop reason."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(3):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        files_processed = 0
+        base = 1000.0
+
+        def process_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal files_processed
+            files_processed += 1
+            return {
+                "result": {"segments": []},
+                "timing": {
+                    "transcribe_secs": 1.0,
+                    "align_secs": 0.5,
+                    "diarize_secs": 0.8,
+                    "total_secs": 2.3,
+                },
+            }
+
+        def fake_monotonic() -> float:
+            if files_processed >= 1:
+                return base + 60.0  # past 30s limit
+            return base + 1.0
+
+        with patch.object(time, "monotonic", fake_monotonic), \
+             patch("transskribo.cli.check_ffprobe_available"), \
+             patch("transskribo.cli.validate_file", return_value=ValidationResult(is_valid=True, duration_secs=60.0, error=None)), \
+             patch("transskribo.cli.compute_hash", side_effect=hash_side_effect), \
+             patch("transskribo.transcriber.process_file", side_effect=process_side_effect):
+            result = runner.invoke(app, [
+                "run", "--config", str(config_path),
+                "--max-processing-minutes", "0.5"
+            ])
+        assert result.exit_code == 0
+
+        log_path = output_dir / ".transskribo" / "transskribo.log"
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8")
+            assert "max-processing-minutes limit (0.5) exceeded" in log_content
+
+
+class TestBatchLimitInteractions:
+    """Tests for interactions between batch limits and other flags."""
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.transcriber.process_file")
+    def test_dry_run_ignores_max_files(
+        self,
+        mock_process: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--dry-run should report all files regardless of --max-files."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(5):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path),
+            "--dry-run", "--max-files", "2"
+        ])
+        assert result.exit_code == 0
+        mock_process.assert_not_called()
+
+        # Dry-run summary should list all 5 files
+        log_path = output_dir / ".transskribo" / "transskribo.log"
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8")
+            assert "Would process 5 files" in log_content
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    @patch("transskribo.cli.validate_file")
+    @patch("transskribo.cli.compute_hash")
+    @patch("transskribo.transcriber.process_file")
+    def test_sigint_takes_priority_over_max_files(
+        self,
+        mock_process: MagicMock,
+        mock_hash: MagicMock,
+        mock_validate: MagicMock,
+        mock_ffprobe: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """SIGINT should take priority over max-files limit."""
+        import transskribo.cli as cli_module
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        for i in range(5):
+            _create_audio_file(input_dir, f"file{i}.mp3", size=100 + i)
+
+        config_path = _write_config(tmp_path, input_dir, output_dir)
+
+        from transskribo.validator import ValidationResult
+
+        mock_validate.return_value = ValidationResult(
+            is_valid=True, duration_secs=60.0, error=None
+        )
+
+        call_count = 0
+
+        def process_side_effect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            nonlocal call_count
+            call_count += 1
+            # Set shutdown after first file
+            if call_count == 1:
+                cli_module._shutdown_requested = True
+            return {
+                "result": {"segments": []},
+                "timing": {
+                    "transcribe_secs": 1.0,
+                    "align_secs": 0.5,
+                    "diarize_secs": 0.8,
+                    "total_secs": 2.3,
+                },
+            }
+
+        hash_counter = 0
+
+        def hash_side_effect(path: Path) -> str:
+            nonlocal hash_counter
+            hash_counter += 1
+            return f"hash_{hash_counter}"
+
+        mock_hash.side_effect = hash_side_effect
+        mock_process.side_effect = process_side_effect
+
+        # max-files=10 is high, but SIGINT after first file should stop
+        result = runner.invoke(app, [
+            "run", "--config", str(config_path), "--max-files", "10"
+        ])
+        assert result.exit_code == 0
+        assert mock_process.call_count == 1
+
+        log_path = output_dir / ".transskribo" / "transskribo.log"
+        if log_path.exists():
+            log_content = log_path.read_text(encoding="utf-8")
+            assert "interrupted" in log_content.lower()
