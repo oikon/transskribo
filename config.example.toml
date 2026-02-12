@@ -1,0 +1,37 @@
+# Transskribo Configuration
+# Copy this file to config.toml and adjust values for your setup.
+
+# Path to the directory containing audio/video files to process.
+input_dir = "/path/to/audio/files"
+
+# Path to the directory where JSON transcription output will be written.
+# The directory structure from input_dir will be mirrored here.
+output_dir = "/path/to/output"
+
+# HuggingFace token for accessing pyannote speaker diarization models.
+# Can also be set via the HF_TOKEN environment variable.
+hf_token = "hf_your_token_here"
+
+# WhisperX model size. Options: "tiny", "base", "small", "medium",
+# "large-v1", "large-v2", "large-v3"
+model_size = "large-v3"
+
+# Language code for transcription.
+language = "pt"
+
+# Compute type for inference. Use "float16" for GPU, "int8" for CPU.
+compute_type = "float16"
+
+# Batch size for WhisperX inference. Lower values use less VRAM.
+# Default of 8 works well on 8GB VRAM GPUs.
+batch_size = 8
+
+# Device to use for inference. "cuda" for GPU, "cpu" for CPU.
+device = "cuda"
+
+# Logging level. Options: "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
+log_level = "INFO"
+
+# Maximum audio duration in hours. Files longer than this will be skipped.
+# Set to 0 to disable the limit.
+max_duration_hours = 0

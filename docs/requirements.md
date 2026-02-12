@@ -4,19 +4,19 @@ Status key: `[ ]` = not started, `[x]` = done
 
 ## 1. Project Setup
 
-- [ ] 1.01 — Create `pyproject.toml` with project metadata, dependencies (whisperx, typer, rich, tomli-w), dev dependencies (pytest, pytest-cov, ruff, pyright), and `[project.scripts]` entry point `transskribo = "transskribo.cli:app"`. Create `src/transskribo/__init__.py` with `__version__`. Create `src/transskribo/cli.py` with a minimal Typer app (just `app = typer.Typer()` and a placeholder `run` callback so `--help` works). Create `.gitignore` for Python project (venv, __pycache__, .eggs, dist, output/, input/, *.pyc, .env, .build-sessions/)
-- [ ] 1.02 — Create `config.example.toml` with all configurable options and comments
-- [ ] 1.03 — Create `tests/conftest.py` with shared fixtures (tmp dirs, sample config)
+- [x] 1.01 — Create `pyproject.toml` with project metadata, dependencies (whisperx, typer, rich, tomli-w), dev dependencies (pytest, pytest-cov, ruff, pyright), and `[project.scripts]` entry point `transskribo = "transskribo.cli:app"`. Create `src/transskribo/__init__.py` with `__version__`. Create `src/transskribo/cli.py` with a minimal Typer app (just `app = typer.Typer()` and a placeholder `run` callback so `--help` works). Create `.gitignore` for Python project (venv, __pycache__, .eggs, dist, output/, input/, *.pyc, .env, .build-sessions/)
+- [x] 1.02 — Create `config.example.toml` with all configurable options and comments
+- [x] 1.03 — Create `tests/conftest.py` with shared fixtures (tmp dirs, sample config)
 
 **Done when:** `uv sync` installs all deps, `uv run transskribo --help` prints usage, `uv run pytest` runs (even if 0 tests)
 
 ## 2. Configuration
 
-- [ ] 2.01 — Define `TransskriboConfig` dataclass in `config.py` with fields: input_dir, output_dir, hf_token, model_size (default: "large-v3"), language (default: "pt"), compute_type (default: "float16"), batch_size (default: 8), device (default: "cuda"), log_level (default: "INFO"), max_duration_hours (default: 0, meaning no limit)
-- [ ] 2.02 — Implement `load_config(path: Path) -> dict` that reads a TOML file and returns a dict
-- [ ] 2.03 — Implement `merge_config(file_config: dict, cli_overrides: dict) -> TransskriboConfig` that applies defaults, then file config, then CLI overrides, and returns a validated dataclass
-- [ ] 2.04 — Implement config validation: check input_dir exists, output_dir is creatable, hf_token is non-empty (from config or `HF_TOKEN` env var)
-- [ ] 2.05 — Write tests for config loading, merging, and validation (valid configs, missing fields, invalid paths, env var fallback)
+- [x] 2.01 — Define `TransskriboConfig` dataclass in `config.py` with fields: input_dir, output_dir, hf_token, model_size (default: "large-v3"), language (default: "pt"), compute_type (default: "float16"), batch_size (default: 8), device (default: "cuda"), log_level (default: "INFO"), max_duration_hours (default: 0, meaning no limit)
+- [x] 2.02 — Implement `load_config(path: Path) -> dict` that reads a TOML file and returns a dict
+- [x] 2.03 — Implement `merge_config(file_config: dict, cli_overrides: dict) -> TransskriboConfig` that applies defaults, then file config, then CLI overrides, and returns a validated dataclass
+- [x] 2.04 — Implement config validation: check input_dir exists, output_dir is creatable, hf_token is non-empty (from config or `HF_TOKEN` env var)
+- [x] 2.05 — Write tests for config loading, merging, and validation (valid configs, missing fields, invalid paths, env var fallback)
 
 **Done when:** Config loads from TOML, merges with CLI overrides, validates, and all tests pass.
 
