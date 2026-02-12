@@ -1,0 +1,32 @@
+{
+  "_comment": "These permissions apply to interactive sessions only (make spec). Headless sessions (build-loop.sh) use --dangerously-skip-permissions which bypasses all checks.",
+  "permissions": {
+    "allow": [
+      "Bash(uv sync)",
+      "Bash(uv run pytest*)",
+      "Bash(uv run ruff*)",
+      "Bash(uv run pyright*)",
+      "Bash(uv run transskribo*)",
+      "Bash(git status*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(python*)",
+      "Bash(mkdir*)",
+      "Bash(ffprobe*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(git checkout .)",
+      "Bash(git clean*)",
+      "Bash(git branch -D*)",
+      "Bash(rm -rf*)",
+      "Bash(pip install*)",
+      "Bash(curl*)",
+      "Bash(wget*)"
+    ]
+  }
+}

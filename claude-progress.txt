@@ -1,0 +1,16 @@
+# Transskribo — Progress Log
+#
+# Format:
+#   Each entry is a block with the following fields:
+#
+#   ## YYYY-MM-DD HH:MM — Session N: <title>
+#   Features: <comma-separated requirement IDs completed>
+#   Status: success | partial | failed
+#   Notes:
+#     - <what was done>
+#     - <what was done>
+#   Issues:
+#     - <any problems encountered, or "none">
+#
+# This file is updated by each headless session after completing work.
+# It serves as a handoff log between sessions.
