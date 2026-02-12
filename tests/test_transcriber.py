@@ -301,9 +301,10 @@ class TestProcessFile:
             mock_diarize_segments, aligned_result
         )
 
-        # Verify VRAM was freed: empty_cache called for align model, whisper unload,
-        # and diarization unload (3 times total)
-        assert mock_torch.cuda.empty_cache.call_count == 3
+        # Verify VRAM was freed: empty_cache called for align model (1),
+        # whisper unload helper (2), process_file stage 1 finally (3),
+        # diarization unload helper (4), process_file stage 2 finally (5)
+        assert mock_torch.cuda.empty_cache.call_count == 5
 
         # Verify output structure
         assert output["result"] == final_result
@@ -409,8 +410,9 @@ class TestProcessFile:
             process_file(audio_path, config)
 
         # Both whisper unload and diarization unload should have called empty_cache
-        # (align model cleanup + whisper unload + diarization unload = 3 calls)
-        assert mock_torch.cuda.empty_cache.call_count == 3
+        # (align cleanup + whisper unload helper + stage 1 finally +
+        # diarization unload helper + stage 2 finally = 5 calls)
+        assert mock_torch.cuda.empty_cache.call_count == 5
 
     @patch("transskribo.transcriber.DiarizationPipeline")
     @patch("transskribo.transcriber.torch")

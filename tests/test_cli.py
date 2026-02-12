@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 import tomli_w
 from typer.testing import CliRunner
 
@@ -51,6 +52,63 @@ def _create_registry(output_dir: Path, entries: dict[str, Any]) -> Path:
 # ---------------------------------------------------------------------------
 # 10.01 — CLI arg parsing, config loading, ffprobe check
 # ---------------------------------------------------------------------------
+
+class TestResolveConfigPath:
+    """Tests for optional --config with ./config.toml fallback."""
+
+    def test_run_uses_explicit_config(self, tmp_path: Path) -> None:
+        """--config value is used when provided."""
+        from transskribo.cli import _resolve_config_path
+
+        config_path = tmp_path / "custom.toml"
+        config_path.touch()
+        result = _resolve_config_path(str(config_path))
+        assert result == config_path
+
+    def test_run_falls_back_to_config_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without --config, uses ./config.toml if it exists."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "config.toml").touch()
+
+        from transskribo.cli import _resolve_config_path
+
+        result = _resolve_config_path(None)
+        assert result == Path("config.toml")
+
+    def test_run_no_config_no_default_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without --config and no config.toml in cwd, exits with error."""
+        monkeypatch.chdir(tmp_path)
+        # No config.toml created
+
+        result = runner.invoke(app, ["run"])
+        assert result.exit_code != 0
+        assert "No --config given" in result.output
+
+    def test_report_no_config_no_default_fails(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Report without --config and no config.toml in cwd, exits with error."""
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["report"])
+        assert result.exit_code != 0
+        assert "No --config given" in result.output
+
+    @patch("transskribo.cli.check_ffprobe_available")
+    def test_run_default_config_toml_used(
+        self, mock_ffprobe: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without --config, run loads ./config.toml and proceeds."""
+        monkeypatch.chdir(tmp_path)
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        _write_config(tmp_path, input_dir, output_dir)  # writes config.toml
+
+        with patch("transskribo.cli._run_pipeline") as mock_pipeline:
+            result = runner.invoke(app, ["run"])
+            assert result.exit_code == 0
+            mock_pipeline.assert_called_once()
+
 
 class TestRunCommandSetup:
     """Tests for the run command startup: config loading, ffprobe check."""

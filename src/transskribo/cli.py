@@ -71,9 +71,23 @@ def _log_file_path(cfg: TransskriboConfig) -> Path:
     return cfg.output_dir / ".transskribo" / "transskribo.log"
 
 
+def _resolve_config_path(config: Optional[str]) -> Path:
+    """Resolve the config file path, falling back to ./config.toml."""
+    if config is not None:
+        return Path(config)
+    default = Path("config.toml")
+    if default.exists():
+        return default
+    typer.echo(
+        "Error: No --config given and no config.toml found in current directory",
+        err=True,
+    )
+    raise typer.Exit(code=1)
+
+
 @app.command()
 def run(
-    config: str = typer.Option(..., "--config", help="Path to TOML config file"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to TOML config file (default: ./config.toml)"),
     input_dir: Optional[str] = typer.Option(None, "--input-dir", help="Override input directory"),
     output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Override output directory"),
     model_size: Optional[str] = typer.Option(None, "--model-size", help="Override model size"),
@@ -82,7 +96,7 @@ def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Scan and validate without processing"),
 ) -> None:
     """Run batch transcription processing."""
-    config_path = Path(config)
+    config_path = _resolve_config_path(config)
     if not config_path.exists():
         typer.echo(f"Error: Config file not found: {config_path}", err=True)
         raise typer.Exit(code=1)
@@ -405,10 +419,10 @@ def _process_single_file(
 
 @app.command()
 def report(
-    config: str = typer.Option(..., "--config", help="Path to TOML config file"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to TOML config file (default: ./config.toml)"),
 ) -> None:
     """Print processing statistics (no GPU needed)."""
-    config_path = Path(config)
+    config_path = _resolve_config_path(config)
     if not config_path.exists():
         typer.echo(f"Error: Config file not found: {config_path}", err=True)
         raise typer.Exit(code=1)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 import time
 from pathlib import Path
@@ -152,6 +153,10 @@ def process_file(
         align_secs = time.monotonic() - t0
     finally:
         unload_whisper_model(model)
+        del model  # Remove caller's reference so GPU memory is actually freed
+        del audio  # No longer needed — pyannote loads audio from file path
+        gc.collect()
+        torch.cuda.empty_cache()
 
     # --- Stage 2: Diarization + speaker assignment ---
     pipeline = load_diarization_pipeline(config)
@@ -161,6 +166,9 @@ def process_file(
         diarize_secs = time.monotonic() - t0
     finally:
         unload_diarization_pipeline(pipeline)
+        del pipeline  # Remove caller's reference
+        gc.collect()
+        torch.cuda.empty_cache()
 
     final_result = assign_speakers(diarize_result, aligned_result)
 
