@@ -22,24 +22,24 @@ Status key: `[ ]` = not started, `[x]` = done
 
 ## 3. Logging
 
-- [ ] 3.01 — Implement `setup_logging(log_level: str, log_file: Path)` in `logging_setup.py` that configures a root logger with two handlers: rich stdout handler and rotating file handler. Create log file directory if it doesn't exist
-- [ ] 3.02 — Write tests: verify both handlers are attached, log file is created, messages appear in both sinks
+- [x] 3.01 — Implement `setup_logging(log_level: str, log_file: Path)` in `logging_setup.py` that configures a root logger with two handlers: rich stdout handler and rotating file handler. Create log file directory if it doesn't exist
+- [x] 3.02 — Write tests: verify both handlers are attached, log file is created, messages appear in both sinks
 
 **Done when:** Calling `setup_logging` produces formatted output to stdout and to a log file. Tests pass.
 
 ## 4. File Scanner
 
-- [ ] 4.01 — Define `AudioFile` dataclass in `scanner.py` (path, relative_path, output_path, size_bytes) and implement `scan_directory(input_dir: Path, output_dir: Path) -> list[AudioFile]` that walks input_dir recursively, filters for supported extensions (case-insensitive): audio (`.mp3`, `.m4a`, `.wav`, `.flac`, `.ogg`, `.opus`, `.wma`, `.aac`) and video (`.mp4`, `.mkv`, `.avi`, `.webm`, `.mov`, `.wmv`), computes mirrored output paths with `.json` extension. Store the supported extensions as a module-level constant `SUPPORTED_EXTENSIONS`
-- [ ] 4.02 — Implement `filter_already_processed(files: list[AudioFile]) -> list[AudioFile]` that removes files whose output_path already exists on disk
-- [ ] 4.03 — Write tests: empty dir, nested dirs, mixed audio/video extensions, case sensitivity (.MP3, .Mp4), unsupported extensions ignored, already-processed filtering
+- [x] 4.01 — Define `AudioFile` dataclass in `scanner.py` (path, relative_path, output_path, size_bytes) and implement `scan_directory(input_dir: Path, output_dir: Path) -> list[AudioFile]` that walks input_dir recursively, filters for supported extensions (case-insensitive): audio (`.mp3`, `.m4a`, `.wav`, `.flac`, `.ogg`, `.opus`, `.wma`, `.aac`) and video (`.mp4`, `.mkv`, `.avi`, `.webm`, `.mov`, `.wmv`), computes mirrored output paths with `.json` extension. Store the supported extensions as a module-level constant `SUPPORTED_EXTENSIONS`
+- [x] 4.02 — Implement `filter_already_processed(files: list[AudioFile]) -> list[AudioFile]` that removes files whose output_path already exists on disk
+- [x] 4.03 — Write tests: empty dir, nested dirs, mixed audio/video extensions, case sensitivity (.MP3, .Mp4), unsupported extensions ignored, already-processed filtering
 
 **Done when:** Scanner finds all audio/video files, maps them to output paths, filters processed ones. Tests pass.
 
 ## 5. File Validation
 
-- [ ] 5.01 — Define `ValidationResult` dataclass in `validator.py` (is_valid: bool, duration_secs: float | None, error: str | None) and implement `check_ffprobe_available()` that verifies ffprobe is on PATH, raising a clear error if not
-- [ ] 5.02 — Implement `validate_file(file_path: Path, max_duration_hours: float) -> ValidationResult` that: rejects zero-length files (size == 0) without calling ffprobe; runs ffprobe as a subprocess to check the file has at least one audio stream and extract duration; rejects files exceeding max_duration_hours (if > 0); returns ValidationResult with duration on success or error reason on failure
-- [ ] 5.03 — Write tests: zero-length file, valid audio file, video file with audio stream, file with no audio stream, corrupt/unreadable file, file exceeding max duration, max_duration_hours=0 means no limit. Use small fixture files and/or mock subprocess calls for ffprobe
+- [x] 5.01 — Define `ValidationResult` dataclass in `validator.py` (is_valid: bool, duration_secs: float | None, error: str | None) and implement `check_ffprobe_available()` that verifies ffprobe is on PATH, raising a clear error if not
+- [x] 5.02 — Implement `validate_file(file_path: Path, max_duration_hours: float) -> ValidationResult` that: rejects zero-length files (size == 0) without calling ffprobe; runs ffprobe as a subprocess to check the file has at least one audio stream and extract duration; rejects files exceeding max_duration_hours (if > 0); returns ValidationResult with duration on success or error reason on failure
+- [x] 5.03 — Write tests: zero-length file, valid audio file, video file with audio stream, file with no audio stream, corrupt/unreadable file, file exceeding max duration, max_duration_hours=0 means no limit. Use small fixture files and/or mock subprocess calls for ffprobe
 
 **Done when:** Validator correctly identifies invalid files (zero-length, corrupt, no audio, over limit) and extracts duration from valid files. Tests pass.
 
