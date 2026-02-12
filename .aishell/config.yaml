@@ -1,0 +1,8 @@
+env:
+  HF_TOKEN:
+  TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: 1
+  PYTHONWARNINGS: "ignore::UserWarning:pyannote.audio.utils.reproducibility"
+
+docker_args:
+  - "--gpus=all"
+  - "--memory=8g"

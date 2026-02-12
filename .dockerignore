@@ -1,0 +1,8 @@
+.git
+.build-sessions/
+.venv/
+__pycache__/
+*.pyc
+input/
+output/
+.env
