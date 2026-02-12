@@ -121,9 +121,10 @@ used, processing time) is added as a top-level field.
 
 ### `cli.py` — Entry Point
 
-- Defines the Typer app with subcommands: `run`, `report`, `version`
+- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `version`
 - `run`: main batch processing pipeline
 - `report`: generate statistics from registry without processing
+- `enrich`: post-process transcriptions with LLM + docx generation
 - Parses CLI flags, loads config, delegates to pipeline
 
 ### `config.py` — Configuration
@@ -203,6 +204,7 @@ used, processing time) is added as a top-level field.
   - Estimated time remaining (based on avg processing time × remaining files)
 - Total audio duration processed vs total audio duration discovered
 - Per-directory breakdown (progress, timing, failures per subdirectory)
+- Enrichment progress: scans result JSONs to count enriched vs not-enriched
 - Generates both a summary dict and a formatted rich table report
 - Can be invoked independently via `transskribo report` (no GPU needed)
 
@@ -211,6 +213,41 @@ used, processing time) is added as a top-level field.
 - Configures dual handlers: rich stdout + rotating file handler
 - Per-file log entries: start, duration, speaker count, status, errors
 - Batch-level log entries: total progress, ETA
+
+### `enricher.py` — LLM Concept Extraction
+
+- Extracts plain text from transcription result JSON segments
+- Groups consecutive same-speaker segments into speaker turns
+- Calls an OpenAI-compatible LLM API to extract structured metadata
+- Checks whether a result JSON already has enrichment data (skip logic)
+- All LLM interaction is isolated in this module (like `transcriber.py`
+  isolates WhisperX)
+
+Functions:
+- `extract_text(document: dict) -> str`: concatenates all segment texts
+  into a single plain text string
+- `group_speaker_turns(document: dict) -> list[dict]`: merges consecutive
+  same-speaker segments into turns, each with `speaker` (str) and `texts`
+  (list[str]) keys
+- `is_enriched(document: dict) -> bool`: returns True if the document
+  already contains all enrichment keys (title, keywords, summary, concepts)
+- `call_llm(text: str, config: EnrichConfig) -> dict`: sends text to LLM
+  via OpenAI SDK (with `base_url`), requests JSON response with title,
+  keywords, summary, concepts. Parses and validates the response
+- `enrich_document(document: dict, config: EnrichConfig) -> dict`:
+  orchestrates extract_text → call_llm → merge enrichment keys into
+  document. Returns the updated document
+
+### `docx_writer.py` — Document Generation
+
+- Loads a .docx template using `docxtpl` (Jinja2 for Word documents)
+- Fills template context variables and saves the rendered document
+- Template context: arquivo, transcritor, data_transcricao, info, segmentos
+
+Functions:
+- `generate_docx(output_path: Path, source_name: str, concepts: dict,
+  segments: list[dict], config: EnrichConfig) -> None`: loads template,
+  renders with context, saves to output_path
 
 ### 9. Batch Limit Controls (CLI-Only)
 
@@ -233,6 +270,69 @@ polluting the config with transient session parameters.
 - Both checks sit alongside the existing `_shutdown_requested` flag at
   the top of the file loop. When either limit is reached, the loop exits
   cleanly and the batch summary reflects the stop reason.
+
+### 10. Enrich Command: LLM-Powered Concept Extraction
+
+**Decision:** A separate `enrich` command that post-processes transcription
+output with an LLM to extract title, keywords, summary, and concepts, then
+generates a .docx catalog document (ficha catalográfica).
+
+**Rationale:** Enrichment is a distinct post-processing step that doesn't
+require GPU or WhisperX. It depends on an external LLM API and has different
+config requirements (no HF token, no CUDA). Keeping it as a separate
+command allows:
+- Running enrichment on a different machine (no GPU needed)
+- Re-enriching without re-transcribing
+- Using different LLM providers by changing config
+- Processing existing outputs from previous runs
+- Batch-enriching all outputs or targeting a single file
+
+### 11. OpenAI-Compatible LLM Interface
+
+**Decision:** Use the `openai` Python SDK with configurable `base_url`,
+`api_key`, and `model`.
+
+**Rationale:** The OpenAI chat completions API is a de facto standard
+supported by OpenAI, Ollama, vLLM, Together, Groq, and many others.
+Using the `openai` SDK with a configurable `base_url` provides maximum
+provider flexibility with a single dependency. Users can switch between
+cloud and local LLMs by changing three config values, no code changes.
+
+### 12. Docx Template Rendering
+
+**Decision:** Use `docxtpl` (Jinja2 for .docx) with a user-provided
+template file at a configurable path.
+
+**Rationale:** The template approach separates content from presentation.
+Users can customize the document layout by editing the .docx template
+without touching code. The default template at `templates/basic.docx`
+provides a catalog card (ficha catalográfica) with metadata, LLM-extracted
+concepts, and full transcription organized by speaker turns.
+
+Template variables:
+- `arquivo`: source file name
+- `transcritor`: transcriber name (configurable)
+- `data_transcricao`: enrichment date in dd/mm/yyyy format
+- `info`: dict with `title`, `keywords`, `summary`, `concepts`
+- `segmentos`: list of speaker turns, each with `speaker` and `texts`
+
+### 13. Enrichment Config Section
+
+**Decision:** All enrich-related settings live under an `[enrich]` section
+in the TOML config file, separate from transcription settings.
+
+**Rationale:** The enrich command has different config requirements than
+transcription (LLM endpoint vs HF token, template path vs model size).
+A dedicated section keeps the config organized. The enrich command reads
+`output_dir` from the top-level config (to find result files in batch mode)
+but does not require `input_dir` or `hf_token`.
+
+Config keys under `[enrich]`:
+- `llm_base_url` (default: `"https://api.openai.com/v1"`)
+- `llm_api_key` (or `ENRICH_API_KEY` env var)
+- `llm_model` (default: `"gpt-4o-mini"`)
+- `template_path` (default: `"templates/basic.docx"`)
+- `transcritor` (default: `"Jonas Rodrigues (via IA)"`)
 
 ## Data Flow
 
@@ -275,6 +375,34 @@ flowchart TD
     style J fill:#9cf,stroke:#333
     style L fill:#f96,stroke:#333
     style O fill:#f96,stroke:#333
+```
+
+### Enrich Data Flow
+
+```mermaid
+flowchart TD
+    A[CLI: parse args + load enrich config] --> B{--file provided?}
+    B -->|Yes| C[Load single result.json]
+    B -->|No| D[Scan output_dir for result JSONs]
+    D --> E[Filter: must have segments + metadata keys]
+    E --> F{For each result.json}
+    C --> F
+    F --> G{is_enriched?}
+    G -->|Yes, no --force| H[Skip — already enriched]
+    G -->|No, or --force| I[Extract plain text from segments]
+    I --> J[Call LLM: extract title, keywords, summary, concepts]
+    J --> K[Merge enrichment keys into document]
+    K --> L[Write updated JSON atomically]
+    L --> M[Group segments into speaker turns]
+    M --> N[Generate .docx from template]
+    N --> O[Log result]
+    H --> F
+    O --> F
+    F -->|All done| P[Log summary]
+
+    style H fill:#f9f,stroke:#333
+    style J fill:#9cf,stroke:#333
+    style N fill:#9f9,stroke:#333
 ```
 
 ## Error Handling Strategy

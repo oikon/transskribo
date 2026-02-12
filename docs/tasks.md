@@ -160,3 +160,33 @@ checks these limits alongside the existing shutdown flag.
 - Batch summary shows the stop reason
 - `--max-files 0` and `--max-processing-minutes 0` mean no limit (default behavior)
 - All tests pass, lint clean, types clean
+
+---
+
+## Session 9 — Enrichment & Document Generation
+
+**Features:** 13.01, 13.02, 13.03, 13.04, 13.05, 13.06, 13.07, 13.08, 13.09, 13.10, 13.11
+
+**Goal:** A new `enrich` command that post-processes transcription outputs
+with an LLM to extract title, keywords, summary, and concepts in Brazilian
+Portuguese, updates the result JSON with those fields, and generates .docx
+catalog documents from a template. Supports batch mode (all files in
+output_dir) and single-file mode (--file). Skips already-enriched files
+unless --force.
+
+**Preconditions:** Session 8 complete, `templates/basic.docx` template exists
+
+**New dependencies:** `openai`, `docxtpl`
+
+**New modules:** `enricher.py`, `docx_writer.py`
+
+**Verification:**
+- `transskribo enrich --config config.toml` batch-enriches all result JSONs in output_dir
+- `transskribo enrich --config config.toml --file path/to/result.json` enriches a single file
+- Result JSONs gain top-level keys: title, keywords, summary, concepts
+- .docx files are generated alongside each result.json (same path, .docx extension)
+- Already-enriched files are skipped unless `--force` is passed
+- Per-file LLM errors are logged and batch continues to next file
+- Config reads `[enrich]` section with LLM and template settings
+- `transskribo report` shows enrichment progress (enriched / total)
+- All tests pass, lint clean, types clean
