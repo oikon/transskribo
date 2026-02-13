@@ -11,7 +11,7 @@ from types import FrameType
 from typing import Any, Optional
 
 import typer
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from transskribo import __version__
 from transskribo.config import TransskriboConfig, load_config, load_enrich_config, load_export_config, merge_config
@@ -294,7 +294,7 @@ def _run_pipeline_inner(
     with Progress(
         TextColumn("[bold blue]{task.description}"),
         BarColumn(),
-        TaskProgressColumn(),
+        MofNCompleteColumn(),
         TextColumn("{task.fields[current_file]}"),
         TimeElapsedColumn(),
     ) as progress:
@@ -556,7 +556,7 @@ def _enrich_batch(
     with Progress(
         TextColumn("[bold blue]{task.description}"),
         BarColumn(),
-        TaskProgressColumn(),
+        MofNCompleteColumn(),
         TextColumn("{task.fields[current_file]}"),
         TimeElapsedColumn(),
     ) as progress:
@@ -732,7 +732,7 @@ def _export_batch(
     with Progress(
         TextColumn("[bold blue]{task.description}"),
         BarColumn(),
-        TaskProgressColumn(),
+        MofNCompleteColumn(),
         TextColumn("{task.fields[current_file]}"),
         TimeElapsedColumn(),
     ) as progress:
