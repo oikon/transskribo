@@ -229,7 +229,7 @@ transcribed → enriched → exported (per format).
 
 ## Session 11 — Export `--all` Flag & Pipeline Command
 
-**Features:** 15.01, 15.02, 15.03
+**Features:** 15.01, 15.02, 15.03, 15.04
 
 **Goal:** Add `--all` flag to `export` command that enables all available
 formats. Then add a convenience `pipeline` command that chains `run` →
@@ -244,6 +244,8 @@ Each stage proceeds regardless of partial failures in the previous stage.
 
 **Tests changed:** `test_export_cli.py`
 
+**Docs changed:** `README.md`
+
 **Verification:**
 - `transskribo export --all` exports in all available formats (currently docx)
 - `--all` alone satisfies the "at least one format" requirement
@@ -253,4 +255,5 @@ Each stage proceeds regardless of partial failures in the previous stage.
 - Partial failures in `enrich` do not prevent `export` from running
 - Per-stage summaries are logged
 - Final combined summary is logged
+- README documents `pipeline` command, `export --all`, and updated features list
 - All tests pass, lint clean, types clean
