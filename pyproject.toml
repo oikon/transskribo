@@ -1,6 +1,6 @@
 [project]
 name = "transskribo"
-version = "0.1.0"
+version = "1.0.0"
 description = "CLI tool for batch audio transcription and speaker diarization using WhisperX"
 requires-python = ">=3.12"
 dependencies = [
