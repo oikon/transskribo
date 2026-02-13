@@ -159,9 +159,14 @@ def _run_pipeline(
 
     def _handle_shutdown(signum: int, frame: FrameType | None) -> None:
         global _shutdown_requested  # noqa: PLW0603
+        if _shutdown_requested:
+            # Second signal — force exit immediately
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            raise KeyboardInterrupt
         _shutdown_requested = True
         sig_name = signal.Signals(signum).name
-        logger.info("Received %s — will finish current file and exit", sig_name)
+        logger.info("Received %s — will finish current file and exit (press again to force quit)", sig_name)
 
     signal.signal(signal.SIGINT, _handle_shutdown)
     signal.signal(signal.SIGTERM, _handle_shutdown)
