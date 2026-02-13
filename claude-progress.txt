@@ -202,3 +202,21 @@ Notes:
   - All 267 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-13 — Session 11: Export `--all` Flag & Pipeline Command
+Features: 15.01, 15.02, 15.03, 15.04
+Status: success
+Notes:
+  - Added --all flag to export command that enables all available formats (currently docx)
+  - --all satisfies the format requirement, works alone or combined with --docx
+  - Implemented pipeline command that chains run → enrich → export --all sequentially
+  - Each pipeline stage proceeds regardless of partial failures in previous stage
+  - Per-stage headers (Stage 1/3, 2/3, 3/3) and final combined summary are logged
+  - Refactored _enrich_batch, _export_batch, _run_pipeline_inner to return summary dicts
+  - Wrote 3 tests for --all flag (enables docx, alone is valid, combined with --docx)
+  - Wrote 7 tests for pipeline command (all stages called, partial failure resilience, logging, missing config, export uses all formats)
+  - Updated README: added pipeline command as recommended one-liner, added --all flag example, added pipeline to features list
+  - Fixed pre-existing version test (0.1.0 → 1.0.0 after version bump)
+  - All 277 tests pass, ruff clean, pyright clean
+Issues:
+  - none
