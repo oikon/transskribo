@@ -329,7 +329,7 @@ but does not require `input_dir` or `hf_token`.
 
 Config keys under `[enrich]`:
 - `llm_base_url` (default: `"https://api.openai.com/v1"`)
-- `llm_api_key` (or `ENRICH_API_KEY` env var)
+- `llm_api_key` (if empty, the `openai` SDK reads `OPENAI_API_KEY` from env automatically)
 - `llm_model` (default: `"gpt-4o-mini"`)
 - `template_path` (default: `"templates/basic.docx"`)
 - `transcritor` (default: `"Jonas Rodrigues (via IA)"`)

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from transskribo.config import EnrichConfig
-from transskribo.docx_writer import generate_docx
+from transskribo.docx_writer import generate_docx, remap_speakers
 
 
 # ---------------------------------------------------------------------------
@@ -128,3 +128,123 @@ class TestGenerateDocx:
             generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, enrich_config)
 
             assert output_path.parent.exists()
+
+
+class TestRemapSpeakers:
+    def test_ranks_by_segment_count(self) -> None:
+        """Speaker with most segments becomes 'Pessoa 01'."""
+        document = {
+            "segments": [
+                {"speaker": "SPEAKER_01", "text": "a"},
+                {"speaker": "SPEAKER_00", "text": "b"},
+                {"speaker": "SPEAKER_00", "text": "c"},
+                {"speaker": "SPEAKER_00", "text": "d"},
+                {"speaker": "SPEAKER_01", "text": "e"},
+            ],
+        }
+        turns = [
+            {"speaker": "SPEAKER_01", "texts": ["a"]},
+            {"speaker": "SPEAKER_00", "texts": ["b", "c", "d"]},
+            {"speaker": "SPEAKER_01", "texts": ["e"]},
+        ]
+        result = remap_speakers(turns, document)
+        # SPEAKER_00 has 3 segments -> Pessoa 01, SPEAKER_01 has 2 -> Pessoa 02
+        assert result[0]["speaker"] == "Pessoa 02"
+        assert result[1]["speaker"] == "Pessoa 01"
+        assert result[2]["speaker"] == "Pessoa 02"
+
+    def test_alphabetical_tiebreak(self) -> None:
+        """Speakers with equal segment counts are ordered alphabetically."""
+        document = {
+            "segments": [
+                {"speaker": "SPEAKER_02", "text": "a"},
+                {"speaker": "SPEAKER_00", "text": "b"},
+            ],
+        }
+        turns = [
+            {"speaker": "SPEAKER_02", "texts": ["a"]},
+            {"speaker": "SPEAKER_00", "texts": ["b"]},
+        ]
+        result = remap_speakers(turns, document)
+        # Both have 1 segment, SPEAKER_00 < SPEAKER_02 alphabetically
+        assert result[0]["speaker"] == "Pessoa 02"  # SPEAKER_02
+        assert result[1]["speaker"] == "Pessoa 01"  # SPEAKER_00
+
+    def test_single_speaker(self) -> None:
+        """Single speaker becomes 'Pessoa 01'."""
+        document = {
+            "segments": [
+                {"speaker": "SPEAKER_00", "text": "a"},
+                {"speaker": "SPEAKER_00", "text": "b"},
+            ],
+        }
+        turns = [{"speaker": "SPEAKER_00", "texts": ["a", "b"]}]
+        result = remap_speakers(turns, document)
+        assert result[0]["speaker"] == "Pessoa 01"
+
+    def test_empty_segments(self) -> None:
+        """Empty document returns empty turns."""
+        document: dict[str, Any] = {"segments": []}
+        turns: list[dict[str, Any]] = []
+        result = remap_speakers(turns, document)
+        assert result == []
+
+    def test_preserves_texts(self) -> None:
+        """Remapping should not alter the texts in turns."""
+        document = {
+            "segments": [
+                {"speaker": "SPEAKER_00", "text": "Hello"},
+                {"speaker": "SPEAKER_01", "text": "World"},
+            ],
+        }
+        turns = [
+            {"speaker": "SPEAKER_00", "texts": ["Hello"]},
+            {"speaker": "SPEAKER_01", "texts": ["World"]},
+        ]
+        result = remap_speakers(turns, document)
+        assert result[0]["texts"] == ["Hello"]
+        assert result[1]["texts"] == ["World"]
+
+    def test_three_speakers(self) -> None:
+        """Three speakers ranked correctly."""
+        document = {
+            "segments": [
+                {"speaker": "C", "text": "1"},
+                {"speaker": "C", "text": "2"},
+                {"speaker": "C", "text": "3"},
+                {"speaker": "A", "text": "4"},
+                {"speaker": "A", "text": "5"},
+                {"speaker": "B", "text": "6"},
+            ],
+        }
+        turns = [
+            {"speaker": "C", "texts": ["1", "2", "3"]},
+            {"speaker": "A", "texts": ["4", "5"]},
+            {"speaker": "B", "texts": ["6"]},
+        ]
+        result = remap_speakers(turns, document)
+        # C=3 segs -> Pessoa 01, A=2 -> Pessoa 02, B=1 -> Pessoa 03
+        assert result[0]["speaker"] == "Pessoa 01"
+        assert result[1]["speaker"] == "Pessoa 02"
+        assert result[2]["speaker"] == "Pessoa 03"
+
+    def test_unknown_speaker_becomes_pessoa_question_mark(self) -> None:
+        """UNKNOWN speakers become 'Pessoa ??' and don't affect numbering."""
+        document = {
+            "segments": [
+                {"speaker": "SPEAKER_00", "text": "a"},
+                {"speaker": "SPEAKER_00", "text": "b"},
+                {"text": "c"},  # missing speaker -> UNKNOWN
+                {"speaker": "SPEAKER_01", "text": "d"},
+            ],
+        }
+        turns = [
+            {"speaker": "SPEAKER_00", "texts": ["a", "b"]},
+            {"speaker": "UNKNOWN", "texts": ["c"]},
+            {"speaker": "SPEAKER_01", "texts": ["d"]},
+        ]
+        result = remap_speakers(turns, document)
+        # SPEAKER_00=2 segs -> Pessoa 01, SPEAKER_01=1 -> Pessoa 02
+        assert result[0]["speaker"] == "Pessoa 01"
+        assert result[1]["speaker"] == "Pessoa ??"
+        assert result[2]["speaker"] == "Pessoa 02"

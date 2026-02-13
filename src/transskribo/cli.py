@@ -503,6 +503,8 @@ def _enrich_single_file(
     """Enrich a single result JSON file."""
     import json
 
+    from transskribo.docx_writer import remap_speakers
+
     if not file_path.exists():
         logger.error("File not found: %s", file_path)
         return
@@ -520,7 +522,7 @@ def _enrich_single_file(
 
         # Generate docx
         docx_path = file_path.with_suffix(".docx")
-        source_name = document.get("metadata", {}).get("source_file", file_path.stem)
+        source_name = Path(document.get("metadata", {}).get("source_file", file_path.name)).stem
         concepts = {
             "title": document.get("title", ""),
             "keywords": document.get("keywords", []),
@@ -528,6 +530,7 @@ def _enrich_single_file(
             "concepts": document.get("concepts", {}),
         }
         turns = group_speaker_turns_fn(document)
+        turns = remap_speakers(turns, document)
         generate_docx_fn(docx_path, source_name, concepts, turns, enrich_cfg)
         logger.info("Enriched: %s", file_path)
     except Exception:
@@ -545,6 +548,8 @@ def _enrich_batch(
 ) -> None:
     """Enrich all result JSON files in the output directory."""
     import json
+
+    from transskribo.docx_writer import remap_speakers
 
     if not output_dir.exists():
         logger.error("Output directory not found: %s", output_dir)
@@ -565,44 +570,65 @@ def _enrich_batch(
     skipped_count = 0
     failed_count = 0
 
-    for json_path in json_files:
-        try:
-            with json_path.open("r", encoding="utf-8") as f:
-                document = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            logger.warning("Cannot read %s, skipping", json_path)
-            failed_count += 1
-            continue
+    with Progress(
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("{task.fields[current_file]}"),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task(
+            "Enriching",
+            total=len(json_files),
+            current_file="",
+        )
 
-        # Only process transskribo result files
-        if not _is_transskribo_result(document):
-            continue
+        for json_path in json_files:
+            progress.update(task, current_file=json_path.name)
 
-        if not force and is_enriched_fn(document):
-            skipped_count += 1
-            continue
+            try:
+                with json_path.open("r", encoding="utf-8") as f:
+                    document = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Cannot read %s, skipping", json_path)
+                failed_count += 1
+                progress.advance(task)
+                continue
 
-        try:
-            document = enrich_document_fn(document, enrich_cfg)
-            _write_json_atomic(document, json_path)
+            # Only process transskribo result files
+            if not _is_transskribo_result(document):
+                progress.advance(task)
+                continue
 
-            # Generate docx
-            docx_path = json_path.with_suffix(".docx")
-            source_name = document.get("metadata", {}).get("source_file", json_path.stem)
-            concepts = {
-                "title": document.get("title", ""),
-                "keywords": document.get("keywords", []),
-                "summary": document.get("summary", ""),
-                "concepts": document.get("concepts", {}),
-            }
-            turns = group_speaker_turns_fn(document)
-            generate_docx_fn(docx_path, source_name, concepts, turns, enrich_cfg)
+            if not force and is_enriched_fn(document):
+                skipped_count += 1
+                progress.advance(task)
+                continue
 
-            enriched_count += 1
-            logger.info("Enriched: %s", json_path)
-        except Exception:
-            failed_count += 1
-            logger.exception("Error enriching %s", json_path)
+            try:
+                document = enrich_document_fn(document, enrich_cfg)
+                _write_json_atomic(document, json_path)
+
+                # Generate docx
+                docx_path = json_path.with_suffix(".docx")
+                source_name = Path(document.get("metadata", {}).get("source_file", json_path.name)).stem
+                concepts = {
+                    "title": document.get("title", ""),
+                    "keywords": document.get("keywords", []),
+                    "summary": document.get("summary", ""),
+                    "concepts": document.get("concepts", {}),
+                }
+                turns = group_speaker_turns_fn(document)
+                turns = remap_speakers(turns, document)
+                generate_docx_fn(docx_path, source_name, concepts, turns, enrich_cfg)
+
+                enriched_count += 1
+                logger.info("Enriched: %s", json_path)
+            except Exception:
+                failed_count += 1
+                logger.exception("Error enriching %s", json_path)
+
+            progress.advance(task)
 
     logger.info("--- Enrich Summary ---")
     logger.info("Enriched: %d", enriched_count)

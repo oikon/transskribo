@@ -95,7 +95,10 @@ def call_llm(text: str, config: EnrichConfig) -> dict[str, Any]:
     from openai import OpenAI
 
     try:
-        client = OpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
+        client = OpenAI(
+            base_url=config.llm_base_url,
+            api_key=config.llm_api_key or None,
+        )
         response = client.chat.completions.create(
             model=config.llm_model,
             messages=[
