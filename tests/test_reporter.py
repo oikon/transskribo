@@ -407,6 +407,33 @@ class TestFormatReport:
         # The word "Enriched" as a row label won't appear
         assert "0 / 0" not in report
 
+    def test_export_docx_progress_shown(self) -> None:
+        report = format_report(
+            stats={
+                "total_files": 10, "processed": 5, "failed": 0, "remaining": 5,
+                "total_audio_duration_processed": 0.0,
+                "enriched": 4, "not_enriched": 1,
+                "exported_docx": 3,
+            },
+            timing_stats={"stages": {}, "avg_total_secs": 0.0, "speed_ratio": 0.0},
+            breakdown={},
+        )
+        assert "Exported (docx)" in report
+        assert "3 / 4" in report
+
+    def test_transcribed_progress_shown(self) -> None:
+        report = format_report(
+            stats={
+                "total_files": 10, "processed": 7, "failed": 0, "remaining": 3,
+                "total_audio_duration_processed": 0.0,
+                "enriched": 0, "not_enriched": 0,
+            },
+            timing_stats={"stages": {}, "avg_total_secs": 0.0, "speed_ratio": 0.0},
+            breakdown={},
+        )
+        assert "Transcribed" in report
+        assert "7 / 10" in report
+
 
 # ---------------------------------------------------------------------------
 # Enrichment stats tests
@@ -503,3 +530,74 @@ class TestEnrichmentStatistics:
         stats = compute_statistics({}, output_dir=output_dir)
         assert stats["enriched"] == 3
         assert stats["not_enriched"] == 2
+
+
+class TestExportStatistics:
+    def test_counts_exported_docx(self, tmp_path: Path) -> None:
+        """compute_statistics should count .docx files alongside enriched JSONs."""
+        import json
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        enriched_doc = {
+            "segments": [{"text": "hello", "speaker": "S1"}],
+            "metadata": {"source_file": "a.mp3"},
+            "title": "Test",
+            "keywords": ["k"],
+            "summary": "s",
+            "concepts": {"c": "d"},
+        }
+
+        # Enriched with docx export
+        (output_dir / "exported.json").write_text(json.dumps(enriched_doc), encoding="utf-8")
+        (output_dir / "exported.docx").touch()
+
+        # Enriched without docx export
+        (output_dir / "not_exported.json").write_text(json.dumps(enriched_doc), encoding="utf-8")
+
+        stats = compute_statistics({}, output_dir=output_dir)
+        assert stats["enriched"] == 2
+        assert stats["exported_docx"] == 1
+
+    def test_non_enriched_not_counted_for_export(self, tmp_path: Path) -> None:
+        """Non-enriched files should not count as exported even if .docx exists."""
+        import json
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        not_enriched = {
+            "segments": [{"text": "hello"}],
+            "metadata": {"source_file": "a.mp3"},
+        }
+        (output_dir / "plain.json").write_text(json.dumps(not_enriched), encoding="utf-8")
+        # Even if a stray .docx exists, it shouldn't count
+        (output_dir / "plain.docx").touch()
+
+        stats = compute_statistics({}, output_dir=output_dir)
+        assert stats["exported_docx"] == 0
+
+    def test_export_stats_without_output_dir(self) -> None:
+        """Without output_dir, export counts should be 0."""
+        stats = compute_statistics({})
+        assert stats["exported_docx"] == 0
+
+    def test_export_stats_skip_transskribo_dir(self, tmp_path: Path) -> None:
+        """Files in .transskribo/ should be skipped for export counting."""
+        import json
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        ts_dir = output_dir / ".transskribo"
+        ts_dir.mkdir()
+        enriched_doc = {
+            "segments": [], "metadata": {},
+            "title": "t", "keywords": [], "summary": "s", "concepts": {},
+        }
+        (ts_dir / "data.json").write_text(json.dumps(enriched_doc), encoding="utf-8")
+        (ts_dir / "data.docx").touch()
+
+        stats = compute_statistics({}, output_dir=output_dir)
+        assert stats["exported_docx"] == 0

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from transskribo.config import EnrichConfig
+from transskribo.config import ExportConfig
 from transskribo.docx_writer import generate_docx, remap_speakers
 
 
@@ -17,14 +17,11 @@ from transskribo.docx_writer import generate_docx, remap_speakers
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def enrich_config(tmp_path: Path) -> EnrichConfig:
-    """EnrichConfig with a template path pointing to a temp file."""
+def export_config(tmp_path: Path) -> ExportConfig:
+    """ExportConfig with a template path pointing to a temp file."""
     template_path = tmp_path / "template.docx"
     template_path.touch()
-    return EnrichConfig(
-        llm_base_url="https://api.test.com/v1",
-        llm_api_key="test-key",
-        llm_model="test-model",
+    return ExportConfig(
         template_path=template_path,
         transcritor="Test Transcriber",
     )
@@ -56,7 +53,7 @@ class TestGenerateDocx:
     def test_creates_docx_file(
         self,
         tmp_path: Path,
-        enrich_config: EnrichConfig,
+        export_config: ExportConfig,
         sample_concepts: dict[str, Any],
         sample_segments: list[dict[str, Any]],
     ) -> None:
@@ -67,9 +64,9 @@ class TestGenerateDocx:
             mock_doc = MagicMock()
             mock_tpl_cls.return_value = mock_doc
 
-            generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, enrich_config)
+            generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, export_config)
 
-            mock_tpl_cls.assert_called_once_with(str(enrich_config.template_path))
+            mock_tpl_cls.assert_called_once_with(str(export_config.template_path))
             mock_doc.render.assert_called_once()
             mock_doc.save.assert_called_once_with(str(output_path))
 
@@ -80,7 +77,7 @@ class TestGenerateDocx:
         sample_segments: list[dict[str, Any]],
     ) -> None:
         """generate_docx should raise FileNotFoundError if template doesn't exist."""
-        config = EnrichConfig(
+        config = ExportConfig(
             template_path=tmp_path / "nonexistent.docx",
         )
         output_path = tmp_path / "output.docx"
@@ -91,7 +88,7 @@ class TestGenerateDocx:
     def test_context_variables_passed(
         self,
         tmp_path: Path,
-        enrich_config: EnrichConfig,
+        export_config: ExportConfig,
         sample_concepts: dict[str, Any],
         sample_segments: list[dict[str, Any]],
     ) -> None:
@@ -102,7 +99,7 @@ class TestGenerateDocx:
             mock_doc = MagicMock()
             mock_tpl_cls.return_value = mock_doc
 
-            generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, enrich_config)
+            generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, export_config)
 
             context = mock_doc.render.call_args[0][0]
             assert context["arquivo"] == "aula.mp3"
@@ -114,7 +111,7 @@ class TestGenerateDocx:
     def test_creates_parent_directories(
         self,
         tmp_path: Path,
-        enrich_config: EnrichConfig,
+        export_config: ExportConfig,
         sample_concepts: dict[str, Any],
         sample_segments: list[dict[str, Any]],
     ) -> None:
@@ -125,7 +122,7 @@ class TestGenerateDocx:
             mock_doc = MagicMock()
             mock_tpl_cls.return_value = mock_doc
 
-            generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, enrich_config)
+            generate_docx(output_path, "aula.mp3", sample_concepts, sample_segments, export_config)
 
             assert output_path.parent.exists()
 

@@ -9,7 +9,7 @@ from typing import Any
 
 from docxtpl import DocxTemplate
 
-from transskribo.config import EnrichConfig
+from transskribo.config import ExportConfig
 
 
 def remap_speakers(
@@ -48,7 +48,7 @@ def generate_docx(
     source_name: str,
     concepts: dict[str, Any],
     segments: list[dict[str, Any]],
-    config: EnrichConfig,
+    config: ExportConfig,
 ) -> None:
     """Load a .docx template, fill it with enrichment data, and save.
 
@@ -57,7 +57,7 @@ def generate_docx(
         source_name: Name of the source audio file.
         concepts: Dict with title, keywords, summary, concepts keys.
         segments: List of speaker turn dicts (speaker + texts).
-        config: Enrich configuration with template_path and transcritor.
+        config: Export configuration with template_path and transcritor.
 
     Raises:
         FileNotFoundError: If the template file does not exist.

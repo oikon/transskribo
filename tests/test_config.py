@@ -10,9 +10,11 @@ import tomli_w
 
 from transskribo.config import (
     EnrichConfig,
+    ExportConfig,
     TransskriboConfig,
     load_config,
     load_enrich_config,
+    load_export_config,
     merge_config,
 )
 
@@ -233,8 +235,6 @@ class TestEnrichConfig:
         assert config.llm_base_url == "https://api.openai.com/v1"
         assert config.llm_api_key == ""
         assert config.llm_model == "gpt-4o-mini"
-        assert config.template_path == Path("templates/basic.docx")
-        assert config.transcritor == "Jonas Rodrigues (via IA)"
 
     def test_loads_from_enrich_section(self) -> None:
         file_config: dict[str, Any] = {
@@ -242,16 +242,12 @@ class TestEnrichConfig:
                 "llm_base_url": "http://localhost:11434/v1",
                 "llm_api_key": "key-from-file",
                 "llm_model": "llama3",
-                "template_path": "custom/template.docx",
-                "transcritor": "Custom Name",
             }
         }
         config = load_enrich_config(file_config, {})
         assert config.llm_base_url == "http://localhost:11434/v1"
         assert config.llm_api_key == "key-from-file"
         assert config.llm_model == "llama3"
-        assert config.template_path == Path("custom/template.docx")
-        assert config.transcritor == "Custom Name"
 
     def test_cli_overrides_file_config(self) -> None:
         file_config: dict[str, Any] = {
@@ -282,10 +278,6 @@ class TestEnrichConfig:
         config = load_enrich_config(file_config, {"llm_api_key": "key-from-cli"})
         assert config.llm_api_key == "key-from-cli"
 
-    def test_template_path_is_path_object(self) -> None:
-        config = load_enrich_config({}, {})
-        assert isinstance(config.template_path, Path)
-
     def test_frozen_dataclass(self) -> None:
         config = load_enrich_config({}, {})
         assert isinstance(config, EnrichConfig)
@@ -301,3 +293,51 @@ class TestEnrichConfig:
         file_config: dict[str, Any] = {"enrich": "invalid"}
         config = load_enrich_config(file_config, {})
         assert config.llm_model == "gpt-4o-mini"
+
+
+class TestExportConfig:
+    """Tests for ExportConfig loading and defaults."""
+
+    def test_defaults(self) -> None:
+        config = load_export_config({}, {})
+        assert config.template_path == Path("templates/basic.docx")
+        assert config.transcritor == "Jonas Rodrigues (via IA)"
+
+    def test_loads_from_export_section(self) -> None:
+        file_config: dict[str, Any] = {
+            "export": {
+                "template_path": "custom/template.docx",
+                "transcritor": "Custom Name",
+            }
+        }
+        config = load_export_config(file_config, {})
+        assert config.template_path == Path("custom/template.docx")
+        assert config.transcritor == "Custom Name"
+
+    def test_cli_overrides_file_config(self) -> None:
+        file_config: dict[str, Any] = {
+            "export": {"transcritor": "File Name"}
+        }
+        cli_overrides = {"transcritor": "CLI Name"}
+        config = load_export_config(file_config, cli_overrides)
+        assert config.transcritor == "CLI Name"
+
+    def test_template_path_is_path_object(self) -> None:
+        config = load_export_config({}, {})
+        assert isinstance(config.template_path, Path)
+
+    def test_frozen_dataclass(self) -> None:
+        config = load_export_config({}, {})
+        assert isinstance(config, ExportConfig)
+        with pytest.raises(AttributeError):
+            config.transcritor = "different"  # type: ignore[misc]
+
+    def test_no_export_section_uses_defaults(self) -> None:
+        file_config: dict[str, Any] = {"input_dir": "/some/path"}
+        config = load_export_config(file_config, {})
+        assert config.template_path == Path("templates/basic.docx")
+
+    def test_non_dict_export_section_uses_defaults(self) -> None:
+        file_config: dict[str, Any] = {"export": "invalid"}
+        config = load_export_config(file_config, {})
+        assert config.template_path == Path("templates/basic.docx")

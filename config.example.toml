@@ -50,6 +50,9 @@ llm_api_key = ""
 # Model name to use for enrichment.
 llm_model = "gpt-4o-mini"
 
+# --- Export settings (used by `transskribo export`) ---
+[export]
+
 # Path to the .docx template for catalog document generation.
 template_path = "templates/basic.docx"
 

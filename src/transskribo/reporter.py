@@ -63,11 +63,12 @@ def compute_statistics(
 
     remaining = max(0, total_files - processed - failed) if total_files > 0 else 0
 
-    # Count enrichment status by scanning result JSONs in output_dir
+    # Count enrichment and export status by scanning result JSONs in output_dir
     enriched = 0
     not_enriched = 0
+    exported_docx = 0
     if output_dir is not None and output_dir.exists():
-        enriched, not_enriched = _count_enrichment(output_dir)
+        enriched, not_enriched, exported_docx = _count_enrichment_and_exports(output_dir)
 
     return {
         "total_files": total_files,
@@ -80,13 +81,15 @@ def compute_statistics(
         "total_audio_duration_discovered": total_audio_discovered,
         "enriched": enriched,
         "not_enriched": not_enriched,
+        "exported_docx": exported_docx,
     }
 
 
-def _count_enrichment(output_dir: Path) -> tuple[int, int]:
-    """Count enriched vs not-enriched result JSONs in output_dir."""
+def _count_enrichment_and_exports(output_dir: Path) -> tuple[int, int, int]:
+    """Count enriched vs not-enriched result JSONs and exported artifacts in output_dir."""
     enriched = 0
     not_enriched = 0
+    exported_docx = 0
     transskribo_dir = output_dir / ".transskribo"
 
     for json_path in output_dir.rglob("*.json"):
@@ -109,10 +112,14 @@ def _count_enrichment(output_dir: Path) -> tuple[int, int]:
 
         if all(key in doc for key in ENRICHMENT_KEYS):
             enriched += 1
+            # Check if corresponding .docx exists
+            docx_path = json_path.with_suffix(".docx")
+            if docx_path.exists():
+                exported_docx += 1
         else:
             not_enriched += 1
 
-    return enriched, not_enriched
+    return enriched, not_enriched, exported_docx
 
 
 def compute_timing_statistics(registry: dict[str, Any]) -> dict[str, Any]:
@@ -274,12 +281,20 @@ def format_report(
     total_audio = stats.get("total_audio_duration_processed", 0.0)
     progress_table.add_row("Audio processed", _format_duration(total_audio))
 
-    # Enrichment progress
+    # Pipeline stage progress
+    transcribed = stats.get("processed", 0)
+    total = stats.get("total_files", 0)
     enriched = stats.get("enriched", 0)
     not_enriched = stats.get("not_enriched", 0)
     enrich_total = enriched + not_enriched
+    exported_docx = stats.get("exported_docx", 0)
+
+    if total > 0:
+        progress_table.add_row("Transcribed", f"{transcribed} / {total}")
     if enrich_total > 0:
         progress_table.add_row("Enriched", f"{enriched} / {enrich_total}")
+    if enriched > 0:
+        progress_table.add_row("Exported (docx)", f"{exported_docx} / {enriched}")
 
     # ETA
     avg_total = timing_stats.get("avg_total_secs", 0.0)

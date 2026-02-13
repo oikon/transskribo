@@ -66,12 +66,10 @@ def _create_result_json(path: Path, enriched: bool = False) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 class TestEnrichBatchMode:
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_batch_enriches_result_jsons(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Batch mode should discover and enrich all result JSONs in output_dir."""
@@ -95,14 +93,11 @@ class TestEnrichBatchMode:
         result = runner.invoke(app, ["enrich", "--config", str(config_path)])
         assert result.exit_code == 0
         assert mock_enrich.call_count == 2
-        assert mock_docx.call_count == 2
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_batch_skips_already_enriched(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Batch mode should skip already-enriched files."""
@@ -127,12 +122,10 @@ class TestEnrichBatchMode:
         # Only the not-enriched file should be processed
         assert mock_enrich.call_count == 1
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_batch_force_re_enriches(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """--force should re-enrich already-enriched files."""
@@ -157,12 +150,10 @@ class TestEnrichBatchMode:
         assert result.exit_code == 0
         assert mock_enrich.call_count == 1
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_batch_skips_non_transskribo_json(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Batch mode should ignore non-transskribo JSON files."""
@@ -190,12 +181,10 @@ class TestEnrichBatchMode:
         assert result.exit_code == 0
         assert mock_enrich.call_count == 1
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_batch_skips_transskribo_dir(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Batch mode should skip files in .transskribo/ directory."""
@@ -226,12 +215,10 @@ class TestEnrichBatchMode:
         assert result.exit_code == 0
         assert mock_enrich.call_count == 1
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document", side_effect=RuntimeError("LLM error"))
     def test_batch_continues_on_per_file_error(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """Per-file LLM errors should be logged and batch should continue."""
@@ -247,15 +234,13 @@ class TestEnrichBatchMode:
         # Both files should be attempted
         assert mock_enrich.call_count == 2
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
-    def test_batch_creates_docx_alongside_json(
+    def test_batch_does_not_generate_docx(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Batch mode should call generate_docx with .docx path alongside .json."""
+        """Enrich command should NOT generate .docx files (moved to export)."""
         output_dir = tmp_path / "output"
         output_dir.mkdir()
         config_path = _write_config_with_enrich(tmp_path, output_dir)
@@ -273,11 +258,9 @@ class TestEnrichBatchMode:
 
         result = runner.invoke(app, ["enrich", "--config", str(config_path)])
         assert result.exit_code == 0
-        assert mock_docx.call_count == 1
-        # Check that the docx path is the json path with .docx extension
-        docx_path_arg = mock_docx.call_args[0][0]
-        assert str(docx_path_arg).endswith(".docx")
-        assert str(docx_path_arg) == str(output_dir / "test.docx")
+        # No .docx file should be created
+        docx_files = list(output_dir.rglob("*.docx"))
+        assert len(docx_files) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -285,12 +268,10 @@ class TestEnrichBatchMode:
 # ---------------------------------------------------------------------------
 
 class TestEnrichSingleFile:
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_single_file_enriches(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """--file should enrich a single result JSON."""
@@ -315,14 +296,11 @@ class TestEnrichSingleFile:
         ])
         assert result.exit_code == 0
         assert mock_enrich.call_count == 1
-        assert mock_docx.call_count == 1
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_single_file_skips_already_enriched(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """--file should skip already-enriched file without --force."""
@@ -339,12 +317,10 @@ class TestEnrichSingleFile:
         assert result.exit_code == 0
         mock_enrich.assert_not_called()
 
-    @patch("transskribo.docx_writer.generate_docx")
     @patch("transskribo.enricher.enrich_document")
     def test_single_file_force_re_enriches(
         self,
         mock_enrich: MagicMock,
-        mock_docx: MagicMock,
         tmp_path: Path,
     ) -> None:
         """--file --force should re-enrich already-enriched file."""

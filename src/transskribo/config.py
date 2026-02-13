@@ -32,6 +32,12 @@ class EnrichConfig:
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
+
+
+@dataclass(frozen=True)
+class ExportConfig:
+    """Immutable configuration for the export command."""
+
     template_path: Path = Path("templates/basic.docx")
     transcritor: str = "Jonas Rodrigues (via IA)"
 
@@ -50,6 +56,9 @@ _ENRICH_DEFAULTS: dict[str, Any] = {
     "llm_base_url": "https://api.openai.com/v1",
     "llm_api_key": "",
     "llm_model": "gpt-4o-mini",
+}
+
+_EXPORT_DEFAULTS: dict[str, Any] = {
     "template_path": "templates/basic.docx",
     "transcritor": "Jonas Rodrigues (via IA)",
 }
@@ -156,14 +165,34 @@ def load_enrich_config(
         if env_key:
             merged["llm_api_key"] = env_key
 
-    # Convert template_path to Path
-    if "template_path" in merged:
-        merged["template_path"] = Path(merged["template_path"])
-
     return EnrichConfig(
         llm_base_url=merged.get("llm_base_url", _ENRICH_DEFAULTS["llm_base_url"]),
         llm_api_key=merged.get("llm_api_key", _ENRICH_DEFAULTS["llm_api_key"]),
         llm_model=merged.get("llm_model", _ENRICH_DEFAULTS["llm_model"]),
-        template_path=merged.get("template_path", Path(_ENRICH_DEFAULTS["template_path"])),
-        transcritor=merged.get("transcritor", _ENRICH_DEFAULTS["transcritor"]),
+    )
+
+
+def load_export_config(
+    file_config: dict[str, Any],
+    cli_overrides: dict[str, Any],
+) -> ExportConfig:
+    """Load export config from the [export] section of a TOML dict.
+
+    Priority: defaults < file config [export] section < CLI overrides.
+    """
+    export_section = file_config.get("export", {})
+    if not isinstance(export_section, dict):
+        export_section = {}
+
+    merged: dict[str, Any] = {**_EXPORT_DEFAULTS}
+    merged.update({k: v for k, v in export_section.items() if v is not None})
+    merged.update({k: v for k, v in cli_overrides.items() if v is not None})
+
+    # Convert template_path to Path
+    if "template_path" in merged:
+        merged["template_path"] = Path(merged["template_path"])
+
+    return ExportConfig(
+        template_path=merged.get("template_path", Path(_EXPORT_DEFAULTS["template_path"])),
+        transcritor=merged.get("transcritor", _EXPORT_DEFAULTS["transcritor"]),
     )
