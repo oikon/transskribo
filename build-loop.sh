@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MAX_SESSIONS="${1:-7}"
+MAX_SESSIONS="${1:-0}"           # 0 = unlimited (iterate until completion)
+SESSION_TIMEOUT="${2:-3600}"     # per-session timeout in seconds (default: 1 hour)
+SAFETY_CAP=50                    # absolute max to prevent runaway (even in unlimited mode)
 LOG_DIR=".build-sessions"
 PROGRESS_FILE="claude-progress.txt"
 REQUIREMENTS_FILE="docs/requirements.md"
@@ -116,32 +118,64 @@ PROMPT
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
+if [ "$MAX_SESSIONS" -eq 0 ]; then
+  LIMIT_LABEL="unlimited"
+else
+  LIMIT_LABEL="$MAX_SESSIONS"
+fi
+
 echo "========================================"
 echo " Transskribo Build Loop"
-echo " Max sessions: $MAX_SESSIONS"
+echo " Max sessions: $LIMIT_LABEL (safety cap: $SAFETY_CAP)"
+echo " Session timeout: ${SESSION_TIMEOUT}s"
 echo " Features: $(count_done)/$(count_total) complete"
 echo "========================================"
 
-for i in $(seq 1 "$MAX_SESSIONS"); do
+SESSION_NUM=0
+while true; do
+  SESSION_NUM=$((SESSION_NUM + 1))
+
+  # Enforce max sessions if set, and always enforce safety cap
+  if [ "$MAX_SESSIONS" -gt 0 ] && [ "$SESSION_NUM" -gt "$MAX_SESSIONS" ]; then
+    break
+  fi
+  if [ "$SESSION_NUM" -gt "$SAFETY_CAP" ]; then
+    echo ""
+    echo "ERROR: Reached safety cap ($SAFETY_CAP sessions). Stopping."
+    exit 1
+  fi
+
   SESSION_LOG="$LOG_DIR/session-$(date +%Y%m%d-%H%M%S).log"
   DONE_BEFORE=$(count_done)
 
   echo ""
-  echo "=== Session $i/$MAX_SESSIONS — $(date) ==="
+  if [ "$MAX_SESSIONS" -gt 0 ]; then
+    echo "=== Session $SESSION_NUM/$MAX_SESSIONS — $(date) ==="
+  else
+    echo "=== Session $SESSION_NUM — $(date) ==="
+  fi
   echo "    Features before: $DONE_BEFORE/$(count_total)"
   echo "    Log: $SESSION_LOG"
   echo ""
 
-  # Run the headless session, capture output
+  # Run the headless session, capture output (with timeout)
   set +e
-  claude --print --dangerously-skip-permissions -p "$SESSION_PROMPT" \
+  timeout "$SESSION_TIMEOUT" \
+    claude --print --dangerously-skip-permissions -p "$SESSION_PROMPT" \
     2>&1 | tee "$SESSION_LOG"
   exit_code=${PIPESTATUS[0]}
   set -e
 
+  # timeout returns 124 when the command is killed
+  if [ $exit_code -eq 124 ]; then
+    echo ""
+    echo "ERROR: Session $SESSION_NUM timed out after ${SESSION_TIMEOUT}s. Stopping."
+    exit 1
+  fi
+
   DONE_AFTER=$(count_done)
   echo ""
-  echo "=== Session $i finished ==="
+  echo "=== Session $SESSION_NUM finished ==="
   echo "    Exit code: $exit_code"
   echo "    Features: $DONE_BEFORE → $DONE_AFTER / $(count_total)"
   echo "    Log: $SESSION_LOG"
@@ -159,14 +193,14 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   # Bail if session failed
   if [ $exit_code -ne 0 ]; then
     echo ""
-    echo "ERROR: Session $i exited with code $exit_code. Stopping."
+    echo "ERROR: Session $SESSION_NUM exited with code $exit_code. Stopping."
     exit $exit_code
   fi
 
   # Bail if no progress was made (stuck session)
   if [ "$DONE_AFTER" -le "$DONE_BEFORE" ]; then
     echo ""
-    echo "WARNING: No features completed in session $i."
+    echo "WARNING: No features completed in session $SESSION_NUM."
     echo "Check $SESSION_LOG for errors. Stopping to avoid infinite loop."
     exit 1
   fi
@@ -175,7 +209,7 @@ for i in $(seq 1 "$MAX_SESSIONS"); do
   if [ "$(count_done)" -eq "$(count_total)" ]; then
     echo ""
     echo "========================================"
-    echo " All features complete after session $i!"
+    echo " All features complete after session $SESSION_NUM!"
     echo "========================================"
     exit 0
   fi
