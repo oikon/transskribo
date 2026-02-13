@@ -345,7 +345,7 @@ Config keys under `[enrich]`:
 
 Config keys under `[export]`:
 - `template_path` (default: `"templates/basic.docx"`)
-- `transcritor` (default: `"Jonas Rodrigues (via IA)"`)
+- `transcritor` (default: `"Transcrição automática (IA)"`)
 
 ### 14. Export Command: Artifact Generation
 
