@@ -203,8 +203,11 @@ def _run_pipeline_inner(
     dry_run: bool = False,
     max_files: int = 0,
     max_processing_minutes: float = 0,
-) -> None:
-    """Inner pipeline logic, separated for signal handler cleanup."""
+) -> dict[str, int]:
+    """Inner pipeline logic, separated for signal handler cleanup.
+
+    Returns a summary dict with keys: processed, failed, skipped, invalid, duplicates.
+    """
     batch_start = time.monotonic()
 
     # Load registry early (needed for retry-failed)
@@ -244,7 +247,7 @@ def _run_pipeline_inner(
 
     if not pending_files:
         logger.info("No files to process. Exiting.")
-        return
+        return {"processed": 0, "failed": 0, "skipped": skipped_existing, "invalid": 0, "duplicates": 0}
 
     # Validate files
     valid_files: list[tuple[AudioFile, float | None]] = []
@@ -264,7 +267,7 @@ def _run_pipeline_inner(
 
     if not valid_files:
         logger.info("No valid files to process after validation.")
-        return
+        return {"processed": 0, "failed": 0, "skipped": skipped_existing, "invalid": invalid_count, "duplicates": 0}
 
     logger.info(
         "%d files passed validation, %d rejected",
@@ -281,7 +284,7 @@ def _run_pipeline_inner(
             logger.info("  %s%s", audio_file.relative_path, dur_str)
         logger.info("Skipped (already done): %d", skipped_existing)
         logger.info("Invalid (rejected): %d", invalid_count)
-        return
+        return {"processed": 0, "failed": 0, "skipped": skipped_existing, "invalid": invalid_count, "duplicates": 0}
 
     # Process files with progress bar
     processed_count = 0
@@ -373,6 +376,14 @@ def _run_pipeline_inner(
     logger.info("Total time: %.1fs", batch_secs)
     if stop_reason:
         logger.info("%s", stop_reason)
+
+    return {
+        "processed": processed_count,
+        "failed": failed_count,
+        "skipped": skipped_existing,
+        "invalid": invalid_count,
+        "duplicates": duplicate_count,
+    }
 
 
 def _process_single_file(
@@ -530,13 +541,16 @@ def _enrich_batch(
     force: bool,
     enrich_document_fn: Any,
     is_enriched_fn: Any,
-) -> None:
-    """Enrich all result JSON files in the output directory."""
+) -> dict[str, int]:
+    """Enrich all result JSON files in the output directory.
+
+    Returns a summary dict with keys: enriched, skipped, failed.
+    """
     import json
 
     if not output_dir.exists():
         logger.error("Output directory not found: %s", output_dir)
-        return
+        return {"enriched": 0, "skipped": 0, "failed": 0}
 
     # Find all .json files recursively, skip .transskribo/ directory
     json_files: list[Path] = []
@@ -605,6 +619,8 @@ def _enrich_batch(
     logger.info("Skipped (already enriched): %d", skipped_count)
     logger.info("Failed: %d", failed_count)
 
+    return {"enriched": enriched_count, "skipped": skipped_count, "failed": failed_count}
+
 
 def _write_json_atomic(document: dict[str, Any], output_path: Path) -> None:
     """Write JSON document atomically."""
@@ -619,10 +635,15 @@ def export_cmd(
     file: Optional[str] = typer.Option(None, "--file", help="Path to a single result.json to export"),
     force: bool = typer.Option(False, "--force", help="Regenerate already-exported files"),
     docx: bool = typer.Option(False, "--docx", help="Generate .docx files"),
+    all_formats: bool = typer.Option(False, "--all", help="Enable all available export formats"),
 ) -> None:
     """Generate output artifacts from enriched transcription results."""
+    # --all enables all available formats
+    if all_formats:
+        docx = True
+
     if not docx:
-        typer.echo("Error: At least one format flag is required (e.g. --docx)", err=True)
+        typer.echo("Error: At least one format flag is required (e.g. --docx or --all)", err=True)
         raise typer.Exit(code=1)
 
     config_path = _resolve_config_path(config)
@@ -707,13 +728,16 @@ def _export_batch(
     group_speaker_turns_fn: Any,
     remap_speakers_fn: Any,
     generate_docx_fn: Any,
-) -> None:
-    """Export all enriched result JSON files in the output directory."""
+) -> dict[str, int]:
+    """Export all enriched result JSON files in the output directory.
+
+    Returns a summary dict with keys: exported, skipped, failed.
+    """
     import json
 
     if not output_dir.exists():
         logger.error("Output directory not found: %s", output_dir)
-        return
+        return {"exported": 0, "skipped": 0, "failed": 0}
 
     # Find all .json files recursively, skip .transskribo/ directory
     json_files: list[Path] = []
@@ -801,6 +825,77 @@ def _export_batch(
     logger.info("Exported: %d", exported_count)
     logger.info("Skipped: %d", skipped_count)
     logger.info("Failed: %d", failed_count)
+
+    return {"exported": exported_count, "skipped": skipped_count, "failed": failed_count}
+
+
+@app.command()
+def pipeline(
+    config: Optional[str] = typer.Option(None, "--config", help="Path to TOML config file (default: ./config.toml)"),
+) -> None:
+    """Run the full pipeline: transcribe, enrich, and export."""
+    config_path = _resolve_config_path(config)
+    if not config_path.exists():
+        typer.echo(f"Error: Config file not found: {config_path}", err=True)
+        raise typer.Exit(code=1)
+
+    file_config = load_config(config_path)
+
+    # --- Stage 1: Transcription ---
+    logger.info("=== Pipeline Stage 1/3: Transcription ===")
+    try:
+        cfg = _build_config(config_path, None, None, None, None)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    setup_logging(cfg.log_level, _log_file_path(cfg))
+
+    try:
+        check_ffprobe_available()
+    except RuntimeError as e:
+        logger.error("%s", e)
+        raise typer.Exit(code=1)
+
+    logger.info("Transskribo v%s — starting pipeline", __version__)
+    _run_pipeline(cfg)
+
+    output_dir = cfg.output_dir
+
+    # --- Stage 2: Enrichment ---
+    logger.info("=== Pipeline Stage 2/3: Enrichment ===")
+    enrich_cfg = load_enrich_config(file_config, {})
+
+    from transskribo.enricher import enrich_document, is_enriched
+
+    enrich_summary = _enrich_batch(output_dir, enrich_cfg, False, enrich_document, is_enriched)
+
+    # --- Stage 3: Export (all formats) ---
+    logger.info("=== Pipeline Stage 3/3: Export ===")
+    export_cfg = load_export_config(file_config, {})
+
+    from transskribo.docx_writer import generate_docx, remap_speakers
+    from transskribo.enricher import group_speaker_turns
+
+    export_summary = _export_batch(
+        output_dir, export_cfg, False, True,
+        is_enriched, group_speaker_turns, remap_speakers, generate_docx,
+    )
+
+    # --- Final combined summary ---
+    logger.info("=== Pipeline Complete ===")
+    logger.info(
+        "Enrichment: %d enriched, %d skipped, %d failed",
+        enrich_summary["enriched"],
+        enrich_summary["skipped"],
+        enrich_summary["failed"],
+    )
+    logger.info(
+        "Export: %d exported, %d skipped, %d failed",
+        export_summary["exported"],
+        export_summary["skipped"],
+        export_summary["failed"],
+    )
 
 
 @app.command()

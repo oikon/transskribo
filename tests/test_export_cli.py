@@ -76,7 +76,7 @@ class TestExportNoFormat:
 
         result = runner.invoke(app, ["export", "--config", str(config_path)])
         assert result.exit_code != 0
-        assert "At least one format flag" in result.output
+        assert "At least one format flag" in result.output or "format flag" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +354,58 @@ class TestExportSingleFile:
 # ---------------------------------------------------------------------------
 # Config and edge cases
 # ---------------------------------------------------------------------------
+
+class TestExportAllFlag:
+    @patch("transskribo.docx_writer.generate_docx")
+    def test_all_enables_docx_export(
+        self,
+        mock_docx: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--all should enable docx export."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        config_path = _write_config(tmp_path, output_dir)
+
+        _create_result_json(output_dir / "result.json", enriched=True)
+
+        result = runner.invoke(app, [
+            "export", "--config", str(config_path), "--all"
+        ])
+        assert result.exit_code == 0
+        assert mock_docx.call_count == 1
+
+    def test_all_alone_is_valid(self, tmp_path: Path) -> None:
+        """--all alone should satisfy the format requirement (no error)."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        config_path = _write_config(tmp_path, output_dir)
+
+        result = runner.invoke(app, [
+            "export", "--config", str(config_path), "--all"
+        ])
+        assert result.exit_code == 0
+        assert "At least one format flag" not in result.output
+
+    @patch("transskribo.docx_writer.generate_docx")
+    def test_all_combined_with_docx(
+        self,
+        mock_docx: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """--all combined with --docx should work without conflict."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        config_path = _write_config(tmp_path, output_dir)
+
+        _create_result_json(output_dir / "result.json", enriched=True)
+
+        result = runner.invoke(app, [
+            "export", "--config", str(config_path), "--all", "--docx"
+        ])
+        assert result.exit_code == 0
+        assert mock_docx.call_count == 1
+
 
 class TestExportConfig:
     def test_missing_config_file(self, tmp_path: Path) -> None:

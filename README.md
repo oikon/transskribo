@@ -19,6 +19,7 @@ Transskribo wraps WhisperX into a batch pipeline. It scans your directory tree, 
 - Processing limits (`--max-files`, `--max-processing-minutes`)
 - LLM enrichment: titles, keywords, summaries, and concepts from transcripts
 - DOCX export with customizable templates
+- Full pipeline command: transcribe, enrich, and export in one step
 - Per-file timing and summary reports
 - TOML configuration with CLI overrides
 
@@ -71,7 +72,10 @@ See `config.example.toml` for all options.
 ## Usage
 
 ```bash
-# Run batch processing
+# Full pipeline: transcribe → enrich → export (recommended)
+uv run transskribo pipeline --config config.toml
+
+# Run batch processing (transcription only)
 uv run transskribo run --config config.toml
 
 # Preview without processing
@@ -94,6 +98,7 @@ uv run transskribo enrich --config config.toml --force  # re-enrich all
 
 # Export enriched results to DOCX
 uv run transskribo export --config config.toml --docx
+uv run transskribo export --config config.toml --all          # all formats
 uv run transskribo export --file output/lecture.json --docx
 uv run transskribo export --config config.toml --docx --force  # regenerate all
 

@@ -504,7 +504,7 @@ class TestVersionCommand:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
         assert "transskribo" in result.output
-        assert "0.1.0" in result.output
+        assert "1.0.0" in result.output
 
 
 # ---------------------------------------------------------------------------
