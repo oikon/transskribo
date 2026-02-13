@@ -121,10 +121,11 @@ used, processing time) is added as a top-level field.
 
 ### `cli.py` — Entry Point
 
-- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `version`
+- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `export`, `version`
 - `run`: main batch processing pipeline
 - `report`: generate statistics from registry without processing
-- `enrich`: post-process transcriptions with LLM + docx generation
+- `enrich`: post-process transcriptions with LLM concept extraction (updates JSON)
+- `export`: generate output artifacts from enriched transcriptions (e.g. .docx)
 - Parses CLI flags, loads config, delegates to pipeline
 
 ### `config.py` — Configuration
@@ -197,6 +198,10 @@ used, processing time) is added as a top-level field.
 
 - Reads the registry AND scans the input directory to compute full picture
 - Overall progress: total files in input, processed, failed, skipped, duplicates, remaining
+- Pipeline stage progress showing the full chain: transcribed → enriched → exported
+  - Transcribed: count of result JSONs in output_dir (have segments + metadata)
+  - Enriched: count of result JSONs that have all enrichment keys (title, keywords, summary, concepts)
+  - Exported per format: count of files with the corresponding artifact (e.g. `.docx` alongside `.json`)
 - Timing statistics (from registry timing data):
   - Average, min, max processing time per stage (transcribe, align, diarize)
   - Average total processing time per file
@@ -204,7 +209,6 @@ used, processing time) is added as a top-level field.
   - Estimated time remaining (based on avg processing time × remaining files)
 - Total audio duration processed vs total audio duration discovered
 - Per-directory breakdown (progress, timing, failures per subdirectory)
-- Enrichment progress: scans result JSONs to count enriched vs not-enriched
 - Generates both a summary dict and a formatted rich table report
 - Can be invoked independently via `transskribo report` (no GPU needed)
 
@@ -246,7 +250,7 @@ Functions:
 
 Functions:
 - `generate_docx(output_path: Path, source_name: str, concepts: dict,
-  segments: list[dict], config: EnrichConfig) -> None`: loads template,
+  segments: list[dict], config: ExportConfig) -> None`: loads template,
   renders with context, saves to output_path
 
 ### 9. Batch Limit Controls (CLI-Only)
@@ -274,15 +278,21 @@ polluting the config with transient session parameters.
 ### 10. Enrich Command: LLM-Powered Concept Extraction
 
 **Decision:** A separate `enrich` command that post-processes transcription
-output with an LLM to extract title, keywords, summary, and concepts, then
-generates a .docx catalog document (ficha catalográfica).
+output with an LLM to extract title, keywords, summary, and concepts. The
+enrich command only updates the result JSON — it does not generate any
+output artifacts.
 
 **Rationale:** Enrichment is a distinct post-processing step that doesn't
 require GPU or WhisperX. It depends on an external LLM API and has different
-config requirements (no HF token, no CUDA). Keeping it as a separate
-command allows:
+config requirements (no HF token, no CUDA). Separating enrichment from
+artifact generation (export) keeps each command focused on one concern:
+- `enrich` = LLM interaction, updates JSON with structured metadata
+- `export` = artifact generation from enriched data (docx, future formats)
+
+This allows:
 - Running enrichment on a different machine (no GPU needed)
-- Re-enriching without re-transcribing
+- Re-enriching without re-exporting
+- Exporting without re-enriching
 - Using different LLM providers by changing config
 - Processing existing outputs from previous runs
 - Batch-enriching all outputs or targeting a single file
@@ -312,27 +322,54 @@ concepts, and full transcription organized by speaker turns.
 Template variables:
 - `arquivo`: source file name
 - `transcritor`: transcriber name (configurable)
-- `data_transcricao`: enrichment date in dd/mm/yyyy format
+- `data_transcricao`: export date in dd/mm/yyyy format
 - `info`: dict with `title`, `keywords`, `summary`, `concepts`
 - `segmentos`: list of speaker turns, each with `speaker` and `texts`
 
 ### 13. Enrichment Config Section
 
-**Decision:** All enrich-related settings live under an `[enrich]` section
-in the TOML config file, separate from transcription settings.
+**Decision:** Enrich and export have separate config sections: `[enrich]`
+for LLM settings and `[export]` for artifact generation settings.
 
-**Rationale:** The enrich command has different config requirements than
-transcription (LLM endpoint vs HF token, template path vs model size).
-A dedicated section keeps the config organized. The enrich command reads
-`output_dir` from the top-level config (to find result files in batch mode)
-but does not require `input_dir` or `hf_token`.
+**Rationale:** Each command has different config requirements. The enrich
+command needs LLM endpoint configuration, while the export command needs
+template paths and document metadata. Splitting `template_path` and
+`transcritor` out of `[enrich]` into `[export]` keeps each section
+focused on its command. Both commands read `output_dir` from the
+top-level config to find result files in batch mode.
 
 Config keys under `[enrich]`:
 - `llm_base_url` (default: `"https://api.openai.com/v1"`)
 - `llm_api_key` (if empty, the `openai` SDK reads `OPENAI_API_KEY` from env automatically)
 - `llm_model` (default: `"gpt-4o-mini"`)
+
+Config keys under `[export]`:
 - `template_path` (default: `"templates/basic.docx"`)
 - `transcritor` (default: `"Jonas Rodrigues (via IA)"`)
+
+### 14. Export Command: Artifact Generation
+
+**Decision:** A separate `export` command that generates output artifacts
+from enriched transcription results. Each format is activated by a flag
+(e.g., `--docx`). At least one format flag is required.
+
+**Rationale:** Artifact generation is a distinct step from both
+transcription and enrichment. Separating it allows:
+- Adding new export formats (PDF, SRT, etc.) without touching enrich logic
+- Re-exporting with a different template without re-enriching
+- Exporting only specific formats in a given run
+- Running export on any machine (no GPU, no LLM API needed)
+
+The export command requires enrichment (files must have title, keywords,
+summary, concepts). Non-enriched files are skipped with a warning.
+
+**Pipeline:** `transcribe → enrich → export`
+
+**Supported formats (current):**
+- `--docx`: generates .docx from template (same logic as previously in enrich)
+
+**Future formats** (not yet implemented):
+- `--pdf`, `--srt`, `--txt`, etc. — each would be a new flag
 
 ## Data Flow
 
@@ -393,15 +430,41 @@ flowchart TD
     I --> J[Call LLM: extract title, keywords, summary, concepts]
     J --> K[Merge enrichment keys into document]
     K --> L[Write updated JSON atomically]
-    L --> M[Group segments into speaker turns]
-    M --> N[Generate .docx from template]
-    N --> O[Log result]
+    L --> O[Log result]
     H --> F
     O --> F
     F -->|All done| P[Log summary]
 
     style H fill:#f9f,stroke:#333
     style J fill:#9cf,stroke:#333
+```
+
+### Export Data Flow
+
+```mermaid
+flowchart TD
+    A[CLI: parse args + load export config] --> B{--file provided?}
+    B -->|Yes| C[Load single result.json]
+    B -->|No| D[Scan output_dir for result JSONs]
+    D --> E[Filter: must have segments + metadata keys]
+    E --> F{For each result.json}
+    C --> F
+    F --> G{is_enriched?}
+    G -->|No| H[Skip — not enriched, log warning]
+    G -->|Yes| I{Which formats requested?}
+    I -->|--docx| J{.docx already exists?}
+    J -->|Yes, no --force| K[Skip — already exported]
+    J -->|No, or --force| L[Group segments into speaker turns]
+    L --> M[Remap speakers]
+    M --> N[Generate .docx from template]
+    N --> O[Log result]
+    H --> F
+    K --> F
+    O --> F
+    F -->|All done| P[Log summary]
+
+    style H fill:#f66,stroke:#333
+    style K fill:#f9f,stroke:#333
     style N fill:#9f9,stroke:#333
 ```
 

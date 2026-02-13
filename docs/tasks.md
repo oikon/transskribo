@@ -190,3 +190,37 @@ unless --force.
 - Config reads `[enrich]` section with LLM and template settings
 - `transskribo report` shows enrichment progress (enriched / total)
 - All tests pass, lint clean, types clean
+
+---
+
+## Session 10 — Export Command & Config Refactor
+
+**Features:** 14.01, 14.02, 14.03, 14.04, 14.05, 14.06
+
+**Goal:** Split artifact generation out of `enrich` into a new `export`
+command. The `enrich` command only does LLM enrichment (updates JSON).
+The `export` command generates output artifacts (currently `--docx`).
+Config is split: `[enrich]` has LLM settings, `[export]` has template
+and document settings. Reporter shows full pipeline progress:
+transcribed → enriched → exported (per format).
+
+**Preconditions:** Session 9 complete
+
+**Modules changed:** `config.py`, `cli.py`, `docx_writer.py`, `reporter.py`
+
+**Tests changed:** `test_config.py`, `test_enrich_cli.py`, `test_docx_writer.py`, `test_reporter.py`
+
+**New test file:** `test_export_cli.py`
+
+**Verification:**
+- `transskribo enrich --config config.toml` enriches JSONs WITHOUT generating .docx
+- `transskribo export --config config.toml --docx` generates .docx for all enriched JSONs
+- `transskribo export --file result.json --docx` exports a single file
+- Non-enriched files are skipped by export with a warning
+- Already-exported files are skipped unless `--force`
+- Export with no format flag prints an error
+- `EnrichConfig` no longer has `template_path` or `transcritor`
+- `ExportConfig` has `template_path` and `transcritor`
+- `config.example.toml` has separate `[enrich]` and `[export]` sections
+- `transskribo report` shows: Transcribed X / total, Enriched X / transcribed, Exported (docx) X / enriched
+- All tests pass, lint clean, types clean
