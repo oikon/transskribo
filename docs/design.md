@@ -121,11 +121,12 @@ used, processing time) is added as a top-level field.
 
 ### `cli.py` — Entry Point
 
-- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `export`, `version`
+- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `export`, `pipeline`, `version`
 - `run`: main batch processing pipeline
 - `report`: generate statistics from registry without processing
 - `enrich`: post-process transcriptions with LLM concept extraction (updates JSON)
 - `export`: generate output artifacts from enriched transcriptions (e.g. .docx)
+- `pipeline`: convenience command that chains `run` → `enrich` → `export --docx` sequentially
 - Parses CLI flags, loads config, delegates to pipeline
 
 ### `config.py` — Configuration
@@ -467,6 +468,32 @@ flowchart TD
     style K fill:#f9f,stroke:#333
     style N fill:#9f9,stroke:#333
 ```
+
+### 15. Pipeline Command: Full End-to-End Convenience
+
+**Decision:** A `pipeline` command that sequentially runs `run` → `enrich`
+→ `export --docx` in a single invocation, with minimal flags (`--config`
+only).
+
+**Rationale:** The three-stage pipeline (`run` → `enrich` → `export`) is
+the most common workflow. Running three separate commands is tedious for
+batch processing. A single command reduces friction while the individual
+commands remain available for fine-grained control.
+
+**Semantics:**
+- Accepts only `--config` (default: `./config.toml`)
+- Calls the `run` stage first (transcription + diarization)
+- If `run` completes (even with partial failures), proceeds to `enrich`
+  all result JSONs in `output_dir` (skips already-enriched)
+- If `enrich` completes (even with partial failures), proceeds to
+  `export --docx` for all enriched result JSONs (skips already-exported)
+- Each stage reuses the existing batch logic from its respective command
+- Each stage logs its own summary; a final combined summary is logged at the end
+- Errors in one stage do not prevent the next stage from running on
+  whatever succeeded — partial progress is always preserved
+- No `--force`, `--file`, `--max-files`, `--max-processing-minutes`,
+  `--retry-failed`, or `--dry-run` flags — use the individual commands
+  for those use cases
 
 ## Error Handling Strategy
 
