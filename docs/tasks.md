@@ -227,13 +227,14 @@ transcribed → enriched → exported (per format).
 
 ---
 
-## Session 11 — Pipeline Command
+## Session 11 — Export `--all` Flag & Pipeline Command
 
-**Features:** 15.01, 15.02
+**Features:** 15.01, 15.02, 15.03
 
-**Goal:** A convenience `pipeline` command that chains `run` → `enrich` →
-`export --docx` in a single invocation. Accepts only `--config`. Each
-stage proceeds regardless of partial failures in the previous stage.
+**Goal:** Add `--all` flag to `export` command that enables all available
+formats. Then add a convenience `pipeline` command that chains `run` →
+`enrich` → `export --all` in a single invocation. Accepts only `--config`.
+Each stage proceeds regardless of partial failures in the previous stage.
 
 **Preconditions:** Session 10 complete
 
@@ -241,8 +242,13 @@ stage proceeds regardless of partial failures in the previous stage.
 
 **New test file:** `test_pipeline_cli.py`
 
+**Tests changed:** `test_export_cli.py`
+
 **Verification:**
-- `transskribo pipeline --config config.toml` runs transcription, enrichment, and docx export sequentially
+- `transskribo export --all` exports in all available formats (currently docx)
+- `--all` alone satisfies the "at least one format" requirement
+- `--all` combined with `--docx` works without conflict
+- `transskribo pipeline --config config.toml` runs transcription, enrichment, and export sequentially
 - Partial failures in `run` do not prevent `enrich` from running
 - Partial failures in `enrich` do not prevent `export` from running
 - Per-stage summaries are logged

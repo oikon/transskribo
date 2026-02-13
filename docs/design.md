@@ -368,9 +368,11 @@ summary, concepts). Non-enriched files are skipped with a warning.
 
 **Supported formats (current):**
 - `--docx`: generates .docx from template (same logic as previously in enrich)
+- `--all`: enables all available export formats (currently equivalent to `--docx`)
 
 **Future formats** (not yet implemented):
 - `--pdf`, `--srt`, `--txt`, etc. — each would be a new flag
+- When new formats are added, `--all` automatically includes them
 
 ## Data Flow
 
@@ -486,7 +488,7 @@ commands remain available for fine-grained control.
 - If `run` completes (even with partial failures), proceeds to `enrich`
   all result JSONs in `output_dir` (skips already-enriched)
 - If `enrich` completes (even with partial failures), proceeds to
-  `export --docx` for all enriched result JSONs (skips already-exported)
+  `export --all` for all enriched result JSONs (skips already-exported)
 - Each stage reuses the existing batch logic from its respective command
 - Each stage logs its own summary; a final combined summary is logged at the end
 - Errors in one stage do not prevent the next stage from running on
