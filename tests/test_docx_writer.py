@@ -248,3 +248,20 @@ class TestRemapSpeakers:
         assert result[0]["speaker"] == "Pessoa 01"
         assert result[1]["speaker"] == "Pessoa ??"
         assert result[2]["speaker"] == "Pessoa 02"
+
+    def test_none_speaker_treated_as_unknown(self) -> None:
+        """None speaker values should be treated as UNKNOWN."""
+        document = {
+            "segments": [
+                {"speaker": "SPEAKER_00", "text": "a"},
+                {"speaker": None, "text": "b"},
+                {"speaker": "SPEAKER_00", "text": "c"},
+            ],
+        }
+        turns = [
+            {"speaker": "SPEAKER_00", "texts": ["a", "c"]},
+            {"speaker": None, "texts": ["b"]},
+        ]
+        result = remap_speakers(turns, document)
+        assert result[0]["speaker"] == "Pessoa 01"
+        assert result[1]["speaker"] == "Pessoa ??"

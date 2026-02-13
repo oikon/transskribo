@@ -29,16 +29,16 @@ def remap_speakers(
         New list of turn dicts with remapped speaker labels.
     """
     segments = document.get("segments", [])
-    counts: Counter[str] = Counter(seg.get("speaker", "UNKNOWN") for seg in segments)
+    counts: Counter[str] = Counter(seg.get("speaker") or "UNKNOWN" for seg in segments)
 
-    # Rank: most segments first, alphabetical tiebreak; exclude UNKNOWN
-    known = {s for s in counts if s != "UNKNOWN"}
+    # Rank: most segments first, alphabetical tiebreak; exclude UNKNOWN/None
+    known = {s for s in counts if s is not None and s != "UNKNOWN"}
     ranked = sorted(known, key=lambda s: (-counts[s], s))
     speaker_map: dict[str, str] = {speaker: f"Pessoa {i + 1:02d}" for i, speaker in enumerate(ranked)}
     speaker_map["UNKNOWN"] = "Pessoa ??"
 
     return [
-        {**turn, "speaker": speaker_map.get(turn["speaker"], turn["speaker"])}
+        {**turn, "speaker": speaker_map.get(turn.get("speaker") or "UNKNOWN", turn.get("speaker") or "UNKNOWN")}
         for turn in turns
     ]
 
