@@ -176,3 +176,29 @@ Notes:
   - All 233 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-13 — Session 10: Export Command & Config Refactor
+Features: 14.01, 14.02, 14.03, 14.04, 14.05, 14.06
+Status: success
+Notes:
+  - Removed template_path and transcritor from EnrichConfig
+  - Defined ExportConfig frozen dataclass with template_path and transcritor fields
+  - Implemented load_export_config() reading [export] TOML section with defaults/file/CLI merge
+  - Added _EXPORT_DEFAULTS dict, updated config.example.toml with separate [enrich] and [export] sections
+  - Updated docx_writer.py: generate_docx now accepts ExportConfig instead of EnrichConfig
+  - Refactored enrich command: removed all docx generation logic from _enrich_single_file and _enrich_batch
+  - Enrich command now only does: read JSON → check is_enriched → call enrich_document → write updated JSON
+  - Implemented export command with --config, --file, --force, --docx options
+  - Export requires at least one format flag (--docx), exits with error if none provided
+  - Batch mode: discovers enriched JSONs, skips non-enriched with warning, skips already-exported unless --force
+  - Single-file mode: exports one file with same skip logic
+  - Updated reporter.py: _count_enrichment_and_exports counts .docx files alongside enriched JSONs
+  - format_report now shows full pipeline progress: Transcribed X/total, Enriched X/transcribed, Exported (docx) X/enriched
+  - Updated test_config.py: added 7 ExportConfig tests, updated EnrichConfig tests to remove template_path/transcritor
+  - Updated test_docx_writer.py: uses ExportConfig instead of EnrichConfig
+  - Updated test_enrich_cli.py: removed docx assertions, added test_batch_does_not_generate_docx
+  - Wrote tests/test_export_cli.py with 14 tests (batch, single-file, force, skip, errors, formats, edge cases)
+  - Updated test_reporter.py: added 6 tests for export stats and pipeline progress display
+  - All 267 tests pass, ruff clean, pyright clean
+Issues:
+  - none
