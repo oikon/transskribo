@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from rich.logging import RichHandler
+
+# Third-party loggers that add their own handlers or are excessively noisy.
+_THIRD_PARTY_LOGGERS = (
+    "whisperx",
+    "pyannote",
+    "speechbrain",
+    "lightning",
+    "lightning_fabric",
+    "torch",
+    "torchaudio",
+)
 
 
 def setup_logging(log_level: str, log_file: Path) -> None:
@@ -20,11 +32,22 @@ def setup_logging(log_level: str, log_file: Path) -> None:
 
     level = getattr(logging, log_level.upper(), logging.INFO)
 
+    # Route Python warnings through the logging system so they respect log level.
+    logging.captureWarnings(True)
+    if level > logging.WARNING:
+        warnings.filterwarnings("ignore")
+
     root = logging.getLogger()
     root.setLevel(level)
 
     # Remove any existing handlers to avoid duplicate output
     root.handlers.clear()
+
+    # Force third-party loggers to respect our level and use our handlers only.
+    for name in _THIRD_PARTY_LOGGERS:
+        lib_logger = logging.getLogger(name)
+        lib_logger.setLevel(level)
+        lib_logger.handlers.clear()
 
     # Rich stdout handler
     stdout_handler = RichHandler(

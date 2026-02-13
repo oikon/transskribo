@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
+import os
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +18,30 @@ from whisperx.diarize import DiarizationPipeline
 from transskribo.config import TransskriboConfig
 
 logger = logging.getLogger(__name__)
+
+# Third-party libraries add their own log handlers during import.
+# Clear them so messages route only through the root logger (configured
+# by setup_logging).  This module is imported lazily, after setup_logging.
+for _name in list(logging.Logger.manager.loggerDict):
+    if _name.startswith(("whisperx", "pyannote", "speechbrain", "lightning")):
+        logging.getLogger(_name).handlers.clear()
+
+
+@contextlib.contextmanager
+def _suppress_noisy_output():
+    """Suppress third-party print() and warnings when log level is above WARNING."""
+    if logging.getLogger().getEffectiveLevel() > logging.WARNING:
+        with (
+            open(os.devnull, "w") as devnull,
+            contextlib.redirect_stdout(devnull),
+            contextlib.redirect_stderr(devnull),
+            warnings.catch_warnings(),
+        ):
+            warnings.simplefilter("ignore")
+            yield
+    else:
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Audio loading
@@ -41,38 +68,41 @@ def load_whisper_model(config: TransskriboConfig) -> Any:
         config.compute_type,
         config.device,
     )
-    model: Any = whisperx.load_model(
-        config.model_size,
-        config.device,
-        compute_type=config.compute_type,
-        language=config.language,
-    )
+    with _suppress_noisy_output():
+        model: Any = whisperx.load_model(
+            config.model_size,
+            config.device,
+            compute_type=config.compute_type,
+            language=config.language,
+        )
     return model
 
 
 def transcribe(model: Any, audio: Any, config: TransskriboConfig) -> dict[str, Any]:
     """Run transcription on loaded audio ndarray."""
     logger.info("Transcribing audio (batch_size=%d)", config.batch_size)
-    result: dict[str, Any] = model.transcribe(
-        audio, batch_size=config.batch_size, language=config.language
-    )
+    with _suppress_noisy_output():
+        result: dict[str, Any] = model.transcribe(
+            audio, batch_size=config.batch_size, language=config.language
+        )
     return result
 
 
 def align(result: dict[str, Any], audio: Any, config: TransskriboConfig) -> dict[str, Any]:
     """Run word-level forced alignment on the transcription result."""
     logger.info("Aligning transcription")
-    model_a, metadata = whisperx.load_align_model(
-        language_code=config.language, device=config.device
-    )
-    aligned: dict[str, Any] = whisperx.align(
-        result["segments"],
-        model_a,
-        metadata,
-        audio,
-        config.device,
-        return_char_alignments=False,
-    )
+    with _suppress_noisy_output():
+        model_a, metadata = whisperx.load_align_model(
+            language_code=config.language, device=config.device
+        )
+        aligned: dict[str, Any] = whisperx.align(
+            result["segments"],
+            model_a,
+            metadata,
+            audio,
+            config.device,
+            return_char_alignments=False,
+        )
     del model_a
     torch.cuda.empty_cache()
     return aligned
@@ -93,16 +123,18 @@ def unload_whisper_model(model: Any) -> None:
 def load_diarization_pipeline(config: TransskriboConfig) -> Any:
     """Load the pyannote diarization pipeline with HF token."""
     logger.info("Loading diarization pipeline")
-    pipeline: Any = DiarizationPipeline(
-        use_auth_token=config.hf_token, device=config.device
-    )
+    with _suppress_noisy_output():
+        pipeline: Any = DiarizationPipeline(
+            use_auth_token=config.hf_token, device=config.device
+        )
     return pipeline
 
 
 def diarize(pipeline: Any, audio_path: Path, config: TransskriboConfig) -> Any:
     """Run speaker diarization. Pyannote loads audio internally."""
     logger.info("Running diarization: %s", audio_path)
-    diarize_segments: Any = pipeline(str(audio_path))
+    with _suppress_noisy_output():
+        diarize_segments: Any = pipeline(str(audio_path))
     return diarize_segments
 
 
