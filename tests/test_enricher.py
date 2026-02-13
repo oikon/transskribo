@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +9,8 @@ import pytest
 
 from transskribo.config import EnrichConfig
 from transskribo.enricher import (
+    Concept,
+    EnrichmentResult,
     call_llm,
     enrich_document,
     extract_text,
@@ -184,23 +185,24 @@ class TestIsEnriched:
 
 class TestCallLlm:
     def test_successful_response(self, enrich_config: EnrichConfig) -> None:
-        llm_response = {
-            "title": "Aula de Introdução",
-            "keywords": ["educação", "introdução"],
-            "summary": "Resumo da aula.",
-            "concepts": {"educação": "Processo de aprendizagem"},
-        }
+        parsed = EnrichmentResult(
+            title="Aula de Introdução",
+            keywords=["educação", "introdução"],
+            summary="Resumo da aula.",
+            concepts=[Concept(name="educação", explanation="Processo de aprendizagem")],
+        )
 
         mock_message = MagicMock()
-        mock_message.content = json.dumps(llm_response)
+        mock_message.parsed = parsed
+        mock_message.refusal = None
         mock_choice = MagicMock()
         mock_choice.message = mock_message
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
 
         with patch("openai.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
-            mock_client.chat.completions.create.return_value = mock_response
+            mock_client.chat.completions.parse.return_value = mock_completion
             mock_openai_cls.return_value = mock_client
 
             result = call_llm("Bom dia, turma.", enrich_config)
@@ -214,43 +216,27 @@ class TestCallLlm:
             base_url="https://api.test.com/v1", api_key="test-key"
         )
 
-    def test_malformed_json_response(self, enrich_config: EnrichConfig) -> None:
+    def test_refusal_response(self, enrich_config: EnrichConfig) -> None:
         mock_message = MagicMock()
-        mock_message.content = "not valid json"
+        mock_message.parsed = None
+        mock_message.refusal = "I cannot process this content"
         mock_choice = MagicMock()
         mock_choice.message = mock_message
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
 
         with patch("openai.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
-            mock_client.chat.completions.create.return_value = mock_response
+            mock_client.chat.completions.parse.return_value = mock_completion
             mock_openai_cls.return_value = mock_client
 
-            with pytest.raises(ValueError, match="not valid JSON"):
-                call_llm("text", enrich_config)
-
-    def test_missing_keys_in_response(self, enrich_config: EnrichConfig) -> None:
-        # Response has title but missing other keys
-        mock_message = MagicMock()
-        mock_message.content = json.dumps({"title": "Test"})
-        mock_choice = MagicMock()
-        mock_choice.message = mock_message
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
-
-        with patch("openai.OpenAI") as mock_openai_cls:
-            mock_client = MagicMock()
-            mock_client.chat.completions.create.return_value = mock_response
-            mock_openai_cls.return_value = mock_client
-
-            with pytest.raises(ValueError, match="missing keys"):
+            with pytest.raises(ValueError, match="refused"):
                 call_llm("text", enrich_config)
 
     def test_api_error(self, enrich_config: EnrichConfig) -> None:
         with patch("openai.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
-            mock_client.chat.completions.create.side_effect = Exception("API error")
+            mock_client.chat.completions.parse.side_effect = Exception("API error")
             mock_openai_cls.return_value = mock_client
 
             with pytest.raises(RuntimeError, match="LLM API call failed"):
@@ -258,18 +244,32 @@ class TestCallLlm:
 
     def test_empty_response(self, enrich_config: EnrichConfig) -> None:
         mock_message = MagicMock()
-        mock_message.content = None
+        mock_message.parsed = None
+        mock_message.refusal = None
         mock_choice = MagicMock()
         mock_choice.message = mock_message
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
 
         with patch("openai.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
-            mock_client.chat.completions.create.return_value = mock_response
+            mock_client.chat.completions.parse.return_value = mock_completion
             mock_openai_cls.return_value = mock_client
 
             with pytest.raises(ValueError, match="empty response"):
+                call_llm("text", enrich_config)
+
+    def test_length_truncation(self, enrich_config: EnrichConfig) -> None:
+        from openai import LengthFinishReasonError
+
+        with patch("openai.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.parse.side_effect = LengthFinishReasonError(
+                completion=MagicMock()
+            )
+            mock_openai_cls.return_value = mock_client
+
+            with pytest.raises(ValueError, match="truncated"):
                 call_llm("text", enrich_config)
 
 

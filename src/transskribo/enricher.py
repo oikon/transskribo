@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
+
+from pydantic import BaseModel
 
 from transskribo.config import EnrichConfig
 
@@ -14,14 +15,28 @@ ENRICHMENT_KEYS = ("title", "keywords", "summary", "concepts")
 
 _SYSTEM_PROMPT = """Você é um assistente especializado em análise de transcrições em português brasileiro.
 
-Dada uma transcrição de áudio, extraia as seguintes informações em formato JSON:
+Dada uma transcrição de áudio, extraia as seguintes informações:
 
-1. "title": Um título descritivo e conciso para o conteúdo (string)
-2. "keywords": Uma lista de 5-10 palavras-chave relevantes (lista de strings)
-3. "summary": Um resumo de 2-4 parágrafos do conteúdo (string)
-4. "concepts": Um dicionário com os principais conceitos discutidos, onde cada chave é o nome do conceito e o valor é uma breve explicação (dicionário string->string)
+1. "title": Um título descritivo e conciso para o conteúdo
+2. "keywords": Uma lista de 5-10 palavras-chave relevantes
+3. "summary": Um resumo de 2-4 parágrafos do conteúdo
+4. "concepts": Uma lista dos principais conceitos discutidos, cada um com "name" (nome do conceito) e "explanation" (breve explicação)"""
 
-Responda APENAS com o JSON válido, sem texto adicional."""
+
+class Concept(BaseModel):
+    """A single concept extracted from the transcription."""
+
+    name: str
+    explanation: str
+
+
+class EnrichmentResult(BaseModel):
+    """Schema for LLM-extracted metadata from transcriptions."""
+
+    title: str
+    keywords: list[str]
+    summary: str
+    concepts: list[Concept]
 
 
 def extract_text(document: dict[str, Any]) -> str:
@@ -80,6 +95,8 @@ def is_enriched(document: dict[str, Any]) -> bool:
 def call_llm(text: str, config: EnrichConfig) -> dict[str, Any]:
     """Call an OpenAI-compatible LLM to extract structured metadata.
 
+    Uses Structured Outputs (Pydantic schema) for guaranteed schema compliance.
+
     Args:
         text: Plain text from the transcription.
         config: Enrich configuration with LLM endpoint details.
@@ -89,46 +106,43 @@ def call_llm(text: str, config: EnrichConfig) -> dict[str, Any]:
         summary (str), concepts (dict[str, str]).
 
     Raises:
-        ValueError: If the LLM response cannot be parsed or is missing keys.
+        ValueError: If the LLM response is refused or empty.
         RuntimeError: If the API call fails.
     """
-    from openai import OpenAI
+    from openai import LengthFinishReasonError, OpenAI
 
     try:
         client = OpenAI(
             base_url=config.llm_base_url,
             api_key=config.llm_api_key or None,
         )
-        response = client.chat.completions.create(
+        completion = client.chat.completions.parse(
             model=config.llm_model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": text},
             ],
-            response_format={"type": "json_object"},
+            response_format=EnrichmentResult,
         )
+    except LengthFinishReasonError as e:
+        raise ValueError("LLM output truncated (max tokens reached)") from e
     except Exception as e:
         raise RuntimeError(f"LLM API call failed: {e}") from e
 
-    content = response.choices[0].message.content
-    if not content:
+    message = completion.choices[0].message
+
+    if message.refusal:
+        raise ValueError(f"LLM refused the request: {message.refusal}")
+
+    if not message.parsed:
         raise ValueError("LLM returned empty response")
 
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"LLM response is not valid JSON: {e}") from e
-
-    # Validate expected keys
-    missing = [k for k in ENRICHMENT_KEYS if k not in parsed]
-    if missing:
-        raise ValueError(f"LLM response missing keys: {', '.join(missing)}")
-
+    result = message.parsed
     return {
-        "title": parsed["title"],
-        "keywords": parsed["keywords"],
-        "summary": parsed["summary"],
-        "concepts": parsed["concepts"],
+        "title": result.title,
+        "keywords": result.keywords,
+        "summary": result.summary,
+        "concepts": {c.name: c.explanation for c in result.concepts},
     }
 
 
