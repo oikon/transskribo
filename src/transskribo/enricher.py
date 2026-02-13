@@ -15,12 +15,27 @@ ENRICHMENT_KEYS = ("title", "keywords", "summary", "concepts")
 
 _SYSTEM_PROMPT = """Você é um assistente especializado em análise de transcrições em português brasileiro.
 
-Dada uma transcrição de áudio, extraia as seguintes informações:
+A partir da transcrição abaixo, extraia informações estruturadas.
 
-1. "title": Um título descritivo e conciso para o conteúdo
-2. "keywords": Uma lista de 5-10 palavras-chave relevantes
-3. "summary": Um resumo de 2-4 parágrafos do conteúdo
-4. "concepts": Uma lista dos principais conceitos discutidos, cada um com "name" (nome do conceito) e "explanation" (breve explicação)"""
+Instruções:
+- Ignore repetições, hesitações e ruídos típicos de fala.
+- Foque nos temas centrais e argumentos principais.
+- Não invente informações que não estejam explicitamente ou implicitamente presentes.
+
+Retorne exclusivamente JSON válido com a seguinte estrutura:
+
+{
+  "title": string,
+  "keywords": string[],           // 5 a 15 palavras-chave concisas
+  "summary": string,              // aproximadamente 200 palavras
+  "concepts": [
+    {
+      "name": string,
+      "explanation": string       // explicação breve (1–3 frases)
+    }
+  ]                                // até 15 conceitos
+}
+"""
 
 
 class Concept(BaseModel):
