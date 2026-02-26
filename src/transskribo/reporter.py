@@ -57,11 +57,13 @@ def compute_statistics(
     # Scan input directory for total count if provided
     total_files = 0
     total_audio_discovered = 0.0
+    remaining = 0
     if input_dir is not None and output_dir is not None:
+        from transskribo.scanner import filter_already_processed
+
         all_files = scan_directory(input_dir, output_dir)
         total_files = len(all_files)
-
-    remaining = max(0, total_files - processed - failed) if total_files > 0 else 0
+        remaining = len(filter_already_processed(all_files))
 
     # Count enrichment and export status by scanning result JSONs in output_dir
     enriched = 0
