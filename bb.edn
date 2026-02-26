@@ -1,0 +1,23 @@
+{:paths ["bb"]
+ :tasks
+ {:requires ([utils :as u])
+
+  spec   {:doc "Open interactive Claude for spec editing"
+          :task (shell "claude")}
+
+  build  {:doc "Run headless build loop (default: 7 sessions)"
+          :requires ([build-loop :as bl])
+          :task (bl/run-build-loop *command-line-args*)}
+
+  watch  {:doc "Watch progress with 10s polling loop"
+          :requires ([watch-progress :as wp])
+          :task (wp/watch)}
+
+  status {:doc "One-shot status display"
+          :requires ([watch-progress :as wp])
+          :task (wp/status)}
+
+  clean  {:doc "Remove .build-sessions/"
+          :requires ([babashka.fs :as fs])
+          :task (do (fs/delete-tree ".build-sessions")
+                    (println "Removed .build-sessions/"))}}}

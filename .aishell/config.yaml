@@ -9,3 +9,6 @@ env:
 docker_args:
   - "--gpus=all"
   - "--memory=8g"
+
+pre_start:
+  - "bb nrepl-server 7888"
