@@ -27,6 +27,13 @@ input/
 .build-sessions/
 config.toml
 
+# Clojure
+.clj-kondo/
+.lsp/
+.nrepl-port
+.cpcache/
+target/
+
 # OS
 .DS_Store
 Thumbs.db

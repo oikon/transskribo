@@ -27,7 +27,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# --- Python + uv (uv-managed CPython 3.12) -------------------------
 
-# Python 3.12 via uv (bookworm ships 3.11)
-# RUN uv python install 3.12
+ENV UV_UNMANAGED_INSTALL=/usr/local/bin \
+    UV_NO_MODIFY_PATH=1 \
+    UV_PYTHON_INSTALL_DIR=/opt/uv/python \
+    UV_PYTHON_BIN_DIR=/usr/local/bin
+
+RUN set -eux; \
+    curl -LsSf https://astral.sh/uv/install.sh | sh; \
+    uv python install 3.12; \
+    ln -sf "$(which python3.12)" /usr/local/bin/python; \
+    ln -sf "$(which python3.12)" /usr/local/bin/python3
