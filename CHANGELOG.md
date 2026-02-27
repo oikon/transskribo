@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-02-27
+
+### Added
+
+- `index` command: generates a cross-file concept index as a markdown file from enriched transcriptions
+- `export --all` flag to enable all available export formats in a single invocation
+- `pipeline` command: chains `run` → `enrich` → `export --all` end-to-end in one command
+- `[index]` config section with configurable output path
+- Babashka build orchestration for headless Claude sessions
+- MIT license
+
+### Fixed
+
+- Remaining file count now uses actual unprocessed filter
+- Dockerfile uv/Python setup corrected
+
+### Changed
+
+- Build loop defaults to unlimited sessions with per-session timeout and safety cap
+
 ## [1.0.0] - 2026-02-13
 
 ### Added
