@@ -121,12 +121,13 @@ used, processing time) is added as a top-level field.
 
 ### `cli.py` — Entry Point
 
-- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `export`, `pipeline`, `version`
+- Defines the Typer app with subcommands: `run`, `report`, `enrich`, `export`, `pipeline`, `index`, `version`
 - `run`: main batch processing pipeline
 - `report`: generate statistics from registry without processing
 - `enrich`: post-process transcriptions with LLM concept extraction (updates JSON)
 - `export`: generate output artifacts from enriched transcriptions (e.g. .docx)
 - `pipeline`: convenience command that chains `run` → `enrich` → `export --docx` sequentially
+- `index`: generate a cross-file concept index as a markdown file
 - Parses CLI flags, loads config, delegates to pipeline
 
 ### `config.py` — Configuration
@@ -348,6 +349,9 @@ Config keys under `[export]`:
 - `template_path` (default: `"templates/basic.docx"`)
 - `transcritor` (default: `"Transcrição automática (IA)"`)
 
+Config keys under `[index]`:
+- `output_path` (default: `""` — empty means `<output_dir>/concept-index.md`)
+
 ### 14. Export Command: Artifact Generation
 
 **Decision:** A separate `export` command that generates output artifacts
@@ -469,6 +473,88 @@ flowchart TD
     style H fill:#f66,stroke:#333
     style K fill:#f9f,stroke:#333
     style N fill:#9f9,stroke:#333
+```
+
+### 16. Index Command: Cross-File Concept Index
+
+**Decision:** A separate `index` command that scans all enriched JSON files
+in `output_dir`, collects every concept, and generates a single markdown
+file serving as a cross-file concept index.
+
+**Rationale:** After enriching hundreds of lecture transcriptions, users need
+a way to find which lectures discuss a given concept. The concept index
+provides an alphabetically sorted, cross-referenced view of all concepts
+across all files — essentially a textbook index built from the LLM-extracted
+concepts. This is a read-only aggregation step with no side effects on the
+source JSON files.
+
+**Semantics:**
+- Scans `output_dir` recursively for result JSONs (same discovery logic as
+  `enrich` and `export` commands)
+- Only processes enriched files (must have `title`, `keywords`, `summary`,
+  `concepts` keys — uses `is_enriched()` from `enricher.py`)
+- Collects all concepts from every enriched file into a unified index
+- Concepts are grouped by unique concept name (case-sensitive)
+- Groups are sorted alphabetically (A-Z by concept name)
+- Under each concept, one bullet per file where it appeared
+- File label = source audio file name from `metadata.source_file`, without
+  the file extension
+- Each bullet shows that file's specific explanation for the concept
+- Within each concept group, bullets are sorted alphabetically by file label
+- Output is a single `.md` file, always overwritten (no `--force` needed)
+- Output path: configurable via `[index]` config section (`output_path`),
+  defaults to `<output_dir>/concept-index.md`, overridable via `--output`
+  CLI flag
+
+**Config keys under `[index]`:**
+- `output_path` (default: `""` — empty means `<output_dir>/concept-index.md`)
+
+**CLI options:**
+- `--config` (TOML config path, default: `./config.toml`)
+- `--output` (path to the output .md file, overrides config and default)
+
+**Not included in the `pipeline` command** — this is a standalone analytical
+tool, not part of the standard processing workflow.
+
+### `indexer.py` — Concept Index Generator
+
+- Scans enriched JSON files and collects concepts into a cross-file index
+- All indexing logic is isolated in this module (called from `cli.py`)
+
+Functions:
+- `collect_concepts(output_dir: Path) -> dict[str, list[tuple[str, str]]]`:
+  scans `output_dir` recursively for enriched result JSONs, collects
+  concepts from each file. Returns a dict mapping concept name to a list
+  of `(file_label, explanation)` tuples. File label is derived from
+  `metadata.source_file` without extension
+- `render_index(concepts: dict[str, list[tuple[str, str]]]) -> str`:
+  renders the concept dict into a markdown string. Concept names sorted
+  A-Z, bullets within each concept sorted alphabetically by file label
+- `generate_index(output_dir: Path, output_path: Path) -> int`: orchestrates
+  collect_concepts → render_index → write file. Returns the number of
+  unique concepts indexed. Logs progress and summary
+
+### Index Data Flow
+
+```mermaid
+flowchart TD
+    A[CLI: parse args + load config] --> B[Scan output_dir for result JSONs]
+    B --> C[Filter: must have segments + metadata keys]
+    C --> D{For each result.json}
+    D --> E{is_enriched?}
+    E -->|No| F[Skip — not enriched]
+    E -->|Yes| G[Read concepts dict from document]
+    G --> H[Add each concept → file_label, explanation to index]
+    F --> D
+    H --> D
+    D -->|All done| I[Sort concepts A-Z]
+    I --> J[Sort bullets within each concept by file label]
+    J --> K[Render markdown]
+    K --> L[Write to output_path]
+    L --> M[Log summary: N concepts, M files]
+
+    style F fill:#f9f,stroke:#333
+    style K fill:#9f9,stroke:#333
 ```
 
 ### 15. Pipeline Command: Full End-to-End Convenience

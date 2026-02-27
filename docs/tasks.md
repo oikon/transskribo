@@ -257,3 +257,41 @@ Each stage proceeds regardless of partial failures in the previous stage.
 - Final combined summary is logged
 - README documents `pipeline` command, `export --all`, and updated features list
 - All tests pass, lint clean, types clean
+
+---
+
+## Session 12 — Concept Index
+
+**Features:** 16.01, 16.02, 16.03, 16.04, 16.05, 16.06, 16.07
+
+**Goal:** A new `index` command that scans all enriched JSON files in
+`output_dir`, collects every concept, and generates a single markdown file
+serving as a cross-file concept index. Concepts grouped alphabetically,
+with per-file bullets showing each file's explanation. Output path is
+configurable via `[index]` TOML section or `--output` CLI flag, defaults
+to `<output_dir>/concept-index.md`. Always overwrites existing index.
+
+**Preconditions:** Session 11 complete (enrichment must be functional)
+
+**New module:** `indexer.py`
+
+**Modules changed:** `config.py`, `cli.py`
+
+**New test file:** `tests/test_indexer.py`, `tests/test_index_cli.py`
+
+**Tests changed:** `test_config.py`
+
+**Docs changed:** `config.example.toml`
+
+**Verification:**
+- `transskribo index --config config.toml` generates `<output_dir>/concept-index.md`
+- `transskribo index --output /tmp/index.md` writes to custom path
+- Concepts sorted A-Z, bullets sorted by file label within each concept
+- File label = `metadata.source_file` without extension
+- Only enriched files are processed (non-enriched silently skipped)
+- Non-transskribo JSONs and `.transskribo/` directory are ignored
+- Empty output or no enriched files produces clear log message
+- Existing index file is always overwritten
+- `IndexConfig` reads `[index]` section from TOML
+- `config.example.toml` has `[index]` section
+- All tests pass, lint clean, types clean
