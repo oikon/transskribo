@@ -11,10 +11,12 @@ import tomli_w
 from transskribo.config import (
     EnrichConfig,
     ExportConfig,
+    IndexConfig,
     TransskriboConfig,
     load_config,
     load_enrich_config,
     load_export_config,
+    load_index_config,
     merge_config,
 )
 
@@ -341,3 +343,46 @@ class TestExportConfig:
         file_config: dict[str, Any] = {"export": "invalid"}
         config = load_export_config(file_config, {})
         assert config.template_path == Path("templates/basic.docx")
+
+
+class TestIndexConfig:
+    """Tests for IndexConfig loading and defaults."""
+
+    def test_defaults(self) -> None:
+        config = load_index_config({}, {})
+        assert config.output_path == Path("")
+
+    def test_loads_from_index_section(self) -> None:
+        file_config: dict[str, Any] = {
+            "index": {"output_path": "/custom/index.md"}
+        }
+        config = load_index_config(file_config, {})
+        assert config.output_path == Path("/custom/index.md")
+
+    def test_cli_overrides_file_config(self) -> None:
+        file_config: dict[str, Any] = {
+            "index": {"output_path": "/from/file.md"}
+        }
+        cli_overrides = {"output_path": "/from/cli.md"}
+        config = load_index_config(file_config, cli_overrides)
+        assert config.output_path == Path("/from/cli.md")
+
+    def test_output_path_is_path_object(self) -> None:
+        config = load_index_config({}, {})
+        assert isinstance(config.output_path, Path)
+
+    def test_frozen_dataclass(self) -> None:
+        config = load_index_config({}, {})
+        assert isinstance(config, IndexConfig)
+        with pytest.raises(AttributeError):
+            config.output_path = Path("different")  # type: ignore[misc]
+
+    def test_no_index_section_uses_defaults(self) -> None:
+        file_config: dict[str, Any] = {"input_dir": "/some/path"}
+        config = load_index_config(file_config, {})
+        assert config.output_path == Path("")
+
+    def test_non_dict_index_section_uses_defaults(self) -> None:
+        file_config: dict[str, Any] = {"index": "invalid"}
+        config = load_index_config(file_config, {})
+        assert config.output_path == Path("")

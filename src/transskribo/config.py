@@ -42,6 +42,13 @@ class ExportConfig:
     transcritor: str = "Jonas Rodrigues (via IA)"
 
 
+@dataclass(frozen=True)
+class IndexConfig:
+    """Immutable configuration for the index command."""
+
+    output_path: Path = Path("")
+
+
 _DEFAULTS: dict[str, Any] = {
     "model_size": "large-v3",
     "language": "pt",
@@ -61,6 +68,10 @@ _ENRICH_DEFAULTS: dict[str, Any] = {
 _EXPORT_DEFAULTS: dict[str, Any] = {
     "template_path": "templates/basic.docx",
     "transcritor": "Jonas Rodrigues (via IA)",
+}
+
+_INDEX_DEFAULTS: dict[str, Any] = {
+    "output_path": "",
 }
 
 
@@ -195,4 +206,29 @@ def load_export_config(
     return ExportConfig(
         template_path=merged.get("template_path", Path(_EXPORT_DEFAULTS["template_path"])),
         transcritor=merged.get("transcritor", _EXPORT_DEFAULTS["transcritor"]),
+    )
+
+
+def load_index_config(
+    file_config: dict[str, Any],
+    cli_overrides: dict[str, Any],
+) -> IndexConfig:
+    """Load index config from the [index] section of a TOML dict.
+
+    Priority: defaults < file config [index] section < CLI overrides.
+    """
+    index_section = file_config.get("index", {})
+    if not isinstance(index_section, dict):
+        index_section = {}
+
+    merged: dict[str, Any] = {**_INDEX_DEFAULTS}
+    merged.update({k: v for k, v in index_section.items() if v is not None})
+    merged.update({k: v for k, v in cli_overrides.items() if v is not None})
+
+    # Convert output_path to Path
+    if "output_path" in merged:
+        merged["output_path"] = Path(merged["output_path"])
+
+    return IndexConfig(
+        output_path=merged.get("output_path", Path(_INDEX_DEFAULTS["output_path"])),
     )

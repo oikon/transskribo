@@ -14,7 +14,7 @@ import typer
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from transskribo import __version__
-from transskribo.config import TransskriboConfig, load_config, load_enrich_config, load_export_config, merge_config
+from transskribo.config import TransskriboConfig, load_config, load_enrich_config, load_export_config, load_index_config, merge_config
 from transskribo.hasher import compute_hash, load_registry, lookup_hash, register_hash, save_registry
 from transskribo.logging_setup import setup_logging
 from transskribo.output import build_output_document, copy_duplicate_output, write_output
@@ -896,6 +896,40 @@ def pipeline(
         export_summary["skipped"],
         export_summary["failed"],
     )
+
+
+@app.command()
+def index(
+    config: Optional[str] = typer.Option(None, "--config", help="Path to TOML config file (default: ./config.toml)"),
+    output: Optional[str] = typer.Option(None, "--output", help="Path to output .md file (overrides config and default)"),
+) -> None:
+    """Generate a cross-file concept index from enriched transcriptions."""
+    config_path = _resolve_config_path(config)
+    if not config_path.exists():
+        typer.echo(f"Error: Config file not found: {config_path}", err=True)
+        raise typer.Exit(code=1)
+
+    file_config = load_config(config_path)
+    output_dir = Path(file_config.get("output_dir", "output"))
+
+    index_cfg = load_index_config(file_config, {})
+
+    # Resolve final output path: CLI --output > config output_path > default
+    if output is not None:
+        final_output_path = Path(output)
+    elif str(index_cfg.output_path) != ".":
+        final_output_path = index_cfg.output_path
+    else:
+        final_output_path = output_dir / "concept-index.md"
+
+    from transskribo.indexer import generate_index
+
+    concept_count = generate_index(output_dir, final_output_path)
+
+    if concept_count > 0:
+        logger.info("Index complete: %d concepts written to %s", concept_count, final_output_path)
+    else:
+        logger.info("No enriched files found — no index generated")
 
 
 @app.command()

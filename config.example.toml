@@ -58,3 +58,10 @@ template_path = "templates/basic.docx"
 
 # Name of the transcriber to include in generated documents.
 transcritor = "Jonas Rodrigues (via IA)"
+
+# --- Index settings (used by `transskribo index`) ---
+[index]
+
+# Path for the generated concept index markdown file.
+# Empty string means <output_dir>/concept-index.md (default).
+output_path = ""
