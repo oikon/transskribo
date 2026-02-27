@@ -220,3 +220,21 @@ Notes:
   - All 277 tests pass, ruff clean, pyright clean
 Issues:
   - none
+
+## 2026-02-27 — Session 12: Concept Index
+Features: 16.01, 16.02, 16.03, 16.04, 16.05, 16.06, 16.07
+Status: success
+Notes:
+  - Defined IndexConfig frozen dataclass with output_path field (default: Path("") → <output_dir>/concept-index.md)
+  - Implemented load_index_config() reading [index] TOML section with defaults/file/CLI merge
+  - Added _INDEX_DEFAULTS dict, updated config.example.toml with [index] section
+  - Created indexer.py with collect_concepts(), render_index(), generate_index()
+  - collect_concepts scans output_dir for enriched result JSONs, collects concepts grouped by name
+  - render_index produces markdown with concepts sorted A-Z, bullets sorted by file label
+  - generate_index orchestrates collection → rendering → file write with parent dir creation
+  - Implemented index CLI command with --config and --output options
+  - Output path resolution: CLI --output > config output_path > default <output_dir>/concept-index.md
+  - Wrote 7 IndexConfig tests, 10 collect_concepts tests, 5 render_index tests, 5 generate_index tests, 7 index CLI tests
+  - All new 27 tests pass, ruff clean, pyright clean
+Issues:
+  - Pre-existing test failures in test_transcriber.py (whisperx import issue) and some test_cli.py/test_reporter.py tests — not caused by this session's changes
