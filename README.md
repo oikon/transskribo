@@ -60,7 +60,8 @@ device = "cuda"
 [enrich]
 llm_base_url = "https://api.openai.com/v1"
 llm_api_key = ""        # or set ENRICH_API_KEY env var
-llm_model = "gpt-4o-mini"
+llm_model = "gpt-6-luna"
+reasoning_effort = "medium"  # set to "" for non-reasoning models
 
 [export]
 template_path = "templates/basic.docx"

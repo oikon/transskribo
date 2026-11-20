@@ -48,7 +48,15 @@ llm_base_url = "https://api.openai.com/v1"
 llm_api_key = ""
 
 # Model name to use for enrichment.
-llm_model = "gpt-4o-mini"
+llm_model = "gpt-6-luna"
+
+# Reasoning effort for reasoning models, sent as `reasoning_effort`.
+# Accepted values depend on the model; OpenAI's gpt-6 models take
+# "none", "low", "medium", "high", "xhigh" or "max". Default: "medium".
+# Set to "" to omit the parameter. This is required for non-reasoning models
+# (e.g. gpt-4o-mini, gpt-4.1) and for servers that don't support the
+# parameter, or every request fails.
+reasoning_effort = "medium"
 
 # --- Export settings (used by `transskribo export`) ---
 [export]

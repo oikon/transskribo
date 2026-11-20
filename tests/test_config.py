@@ -236,7 +236,23 @@ class TestEnrichConfig:
         config = load_enrich_config({}, {})
         assert config.llm_base_url == "https://api.openai.com/v1"
         assert config.llm_api_key == ""
-        assert config.llm_model == "gpt-4o-mini"
+        assert config.llm_model == "gpt-6-luna"
+        assert config.reasoning_effort == "medium"
+
+    def test_reasoning_effort_from_file(self) -> None:
+        file_config: dict[str, Any] = {"enrich": {"reasoning_effort": "low"}}
+        config = load_enrich_config(file_config, {})
+        assert config.reasoning_effort == "low"
+
+    def test_reasoning_effort_cli_overrides_file(self) -> None:
+        file_config: dict[str, Any] = {"enrich": {"reasoning_effort": "low"}}
+        config = load_enrich_config(file_config, {"reasoning_effort": "high"})
+        assert config.reasoning_effort == "high"
+
+    def test_reasoning_effort_empty_disables(self) -> None:
+        file_config: dict[str, Any] = {"enrich": {"reasoning_effort": ""}}
+        config = load_enrich_config(file_config, {})
+        assert config.reasoning_effort == ""
 
     def test_loads_from_enrich_section(self) -> None:
         file_config: dict[str, Any] = {
@@ -289,12 +305,12 @@ class TestEnrichConfig:
     def test_no_enrich_section_uses_defaults(self) -> None:
         file_config: dict[str, Any] = {"input_dir": "/some/path"}
         config = load_enrich_config(file_config, {})
-        assert config.llm_model == "gpt-4o-mini"
+        assert config.llm_model == "gpt-6-luna"
 
     def test_non_dict_enrich_section_uses_defaults(self) -> None:
         file_config: dict[str, Any] = {"enrich": "invalid"}
         config = load_enrich_config(file_config, {})
-        assert config.llm_model == "gpt-4o-mini"
+        assert config.llm_model == "gpt-6-luna"
 
 
 class TestExportConfig:

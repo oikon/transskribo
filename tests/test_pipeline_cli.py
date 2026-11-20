@@ -32,7 +32,7 @@ def _write_config(
         "enrich": {
             "llm_base_url": "https://api.openai.com/v1",
             "llm_api_key": "sk-test",
-            "llm_model": "gpt-4o-mini",
+            "llm_model": "gpt-6-luna",
         },
         "export": {
             "template_path": "templates/basic.docx",

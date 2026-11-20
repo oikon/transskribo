@@ -31,7 +31,8 @@ class EnrichConfig:
 
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gpt-6-luna"
+    reasoning_effort: str = "medium"
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,8 @@ _DEFAULTS: dict[str, Any] = {
 _ENRICH_DEFAULTS: dict[str, Any] = {
     "llm_base_url": "https://api.openai.com/v1",
     "llm_api_key": "",
-    "llm_model": "gpt-4o-mini",
+    "llm_model": "gpt-6-luna",
+    "reasoning_effort": "medium",
 }
 
 _EXPORT_DEFAULTS: dict[str, Any] = {
@@ -180,6 +182,9 @@ def load_enrich_config(
         llm_base_url=merged.get("llm_base_url", _ENRICH_DEFAULTS["llm_base_url"]),
         llm_api_key=merged.get("llm_api_key", _ENRICH_DEFAULTS["llm_api_key"]),
         llm_model=merged.get("llm_model", _ENRICH_DEFAULTS["llm_model"]),
+        reasoning_effort=merged.get(
+            "reasoning_effort", _ENRICH_DEFAULTS["reasoning_effort"]
+        ),
     )
 
 

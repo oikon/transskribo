@@ -343,7 +343,8 @@ top-level config to find result files in batch mode.
 Config keys under `[enrich]`:
 - `llm_base_url` (default: `"https://api.openai.com/v1"`)
 - `llm_api_key` (if empty, the `openai` SDK reads `OPENAI_API_KEY` from env automatically)
-- `llm_model` (default: `"gpt-4o-mini"`)
+- `llm_model` (default: `"gpt-6-luna"`)
+- `reasoning_effort` (default: `"medium"`; passed as `reasoning_effort` in the chat completion request; `""` omits the parameter, for non-reasoning models)
 
 Config keys under `[export]`:
 - `template_path` (default: `"templates/basic.docx"`)

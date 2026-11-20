@@ -238,3 +238,18 @@ Notes:
   - All new 27 tests pass, ruff clean, pyright clean
 Issues:
   - Pre-existing test failures in test_transcriber.py (whisperx import issue) and some test_cli.py/test_reporter.py tests — not caused by this session's changes
+
+## 2026-11-20 — Enrichment model defaults
+Features: 17.01
+Status: success
+Notes:
+  - Default llm_model changed from gpt-4o-mini (deprecated 2027-01-14) to gpt-6-luna
+  - Added EnrichConfig.reasoning_effort (default "medium"; "" = not sent), passed via extra_body when set
+  - "medium" chosen over "low" for quality margin vs gpt-4.1 (OpenAI expects most GPT-4.x use cases to migrate at "none")
+  - config.example.toml, README and design.md updated
+  - Added tests for config default/loading/empty value and for call_llm sending or omitting the parameter
+  - 313 passed, ruff clean, pyright clean
+Issues:
+  - 2 pre-existing failures, unrelated (same 2 fail on the unmodified tree):
+    FAILED tests/test_cli.py::TestVersionCommand::test_version_output - Assertion...
+    FAILED tests/test_reporter.py::TestComputeStatistics::test_with_input_dir - a...

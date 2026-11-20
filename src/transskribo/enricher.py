@@ -126,6 +126,15 @@ def call_llm(text: str, config: EnrichConfig) -> dict[str, Any]:
     """
     from openai import LengthFinishReasonError, OpenAI
 
+    # Sent through extra_body so values newer than the SDK's Literal type
+    # (e.g. "max") reach the API. Omitted when empty, because non-reasoning
+    # models and some OpenAI-compatible servers reject the parameter.
+    extra_body: dict[str, Any] | None = (
+        {"reasoning_effort": config.reasoning_effort}
+        if config.reasoning_effort
+        else None
+    )
+
     try:
         client = OpenAI(
             base_url=config.llm_base_url,
@@ -138,6 +147,7 @@ def call_llm(text: str, config: EnrichConfig) -> dict[str, Any]:
                 {"role": "user", "content": text},
             ],
             response_format=EnrichmentResult,
+            extra_body=extra_body,
         )
     except LengthFinishReasonError as e:
         raise ValueError("LLM output truncated (max tokens reached)") from e

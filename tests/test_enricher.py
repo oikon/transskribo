@@ -215,6 +215,37 @@ class TestCallLlm:
         mock_openai_cls.assert_called_once_with(
             base_url="https://api.test.com/v1", api_key="test-key"
         )
+        # Default reasoning_effort is sent
+        kwargs = mock_client.chat.completions.parse.call_args.kwargs
+        assert kwargs["extra_body"] == {"reasoning_effort": "medium"}
+
+    def test_reasoning_effort_omitted_when_empty(self) -> None:
+        config = EnrichConfig(
+            llm_base_url="https://api.test.com/v1",
+            llm_api_key="test-key",
+            llm_model="gpt-4.1",
+            reasoning_effort="",
+        )
+        mock_message = MagicMock()
+        mock_message.parsed = EnrichmentResult(
+            title="T", keywords=["k"], summary="S", concepts=[]
+        )
+        mock_message.refusal = None
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+
+        with patch("openai.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.parse.return_value = mock_completion
+            mock_openai_cls.return_value = mock_client
+
+            call_llm("Bom dia, turma.", config)
+
+        kwargs = mock_client.chat.completions.parse.call_args.kwargs
+        assert kwargs["model"] == "gpt-4.1"
+        assert kwargs["extra_body"] is None
 
     def test_refusal_response(self, enrich_config: EnrichConfig) -> None:
         mock_message = MagicMock()

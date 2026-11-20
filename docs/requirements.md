@@ -156,3 +156,9 @@ loading pyannote for diarization. This prevents OOM on 8GB VRAM.
 - [x] 16.07 — Write tests for `index` CLI command: batch mode discovers enriched files and generates index, `--output` overrides default path, config `output_path` is used when set, default path is `<output_dir>/concept-index.md`, empty output_dir logs warning, no enriched files logs warning, existing index is overwritten
 
 **Done when:** `transskribo index --config config.toml` generates a cross-file concept index markdown file. `transskribo index --output custom-path.md` writes to a custom path. Concepts are grouped alphabetically with per-file bullets. Only enriched files are included. Tests pass, lint clean, types clean.
+
+## 17. Enrichment Model Defaults
+
+- [x] 17.01 — Change the `llm_model` default in `EnrichConfig` / `_ENRICH_DEFAULTS` from "gpt-4o-mini" (deprecated by OpenAI on 2027-01-14) to "gpt-6-luna". Add a `reasoning_effort: str` field (default: "medium"; "" means not sent) loaded from the `[enrich]` section with CLI override merging. In `call_llm`, send it as `reasoning_effort` through `extra_body` only when non-empty, so values newer than the SDK's Literal type (e.g. "max") still pass and non-reasoning models or servers are unaffected. Update `config.example.toml` (`reasoning_effort = "medium"`), README and design.md. Write tests for the default, file/CLI loading, and that the parameter is omitted when empty and sent when set
+
+**Done when:** A fresh config enriches with `gpt-6-luna`, `reasoning_effort` defaults to "medium" and is omitted when set to "". Tests pass, lint clean, types clean.
